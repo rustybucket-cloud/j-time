@@ -262,7 +262,24 @@ export function App(): ReactNode {
   return (
     <div className="panel" ref={root} onKeyDown={onKeyDown}>
       <div className="search">
-        <span className="glyph">{overlay || screen.kind !== 'list' ? <BackGlyph /> : <SearchGlyph />}</span>
+        {overlay || screen.kind !== 'list' ? (
+          <button
+            type="button"
+            className="glyph back-btn"
+            title="Back (⎋)"
+            aria-label="Back"
+            // The search field owns the keyboard; letting the button take focus
+            // would send the palette's own keys nowhere.
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={back}
+          >
+            <BackGlyph />
+          </button>
+        ) : (
+          <span className="glyph">
+            <SearchGlyph />
+          </span>
+        )}
         {overlay && <span className="back">{overlay.title}</span>}
         <input
           ref={input}
