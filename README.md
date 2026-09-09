@@ -25,6 +25,8 @@ The first launch opens straight to Settings. You need three things:
 Also configurable there: the activity labels you file time under, the rounding
 increment, and the hotkey.
 
+Atlassian API token is stored encrypted with Electron's safeStorage.
+
 ## Use it
 
 Press `⌘⇧J` for the palette. In Progress leads; the running story is pinned to
