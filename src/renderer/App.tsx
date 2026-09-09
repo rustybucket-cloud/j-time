@@ -81,6 +81,16 @@ export function App(): ReactNode {
     input.current?.focus();
   });
 
+  // Starting a timer no longer closes the panel, so its toast now sits in the
+  // footer in front of you — and that footer is also where the running clock
+  // lives. Clear the good ones so the clock comes back; errors stay until
+  // something else replaces them.
+  useEffect(() => {
+    if (!toast || toast.bad) return;
+    const id = setTimeout(() => setToast(null), 2500);
+    return () => clearTimeout(id);
+  }, [toast]);
+
   // A new level is a new list; carrying the old query into it would filter it to
   // nothing and look broken.
   useEffect(() => {
@@ -310,6 +320,20 @@ export function App(): ReactNode {
             Back <kbd>⎋</kbd>
           </span>
         )}
+        {screen.kind !== 'settings' && (
+          <button
+            type="button"
+            className="gear"
+            title="Settings (⌘,)"
+            aria-label="Settings"
+            // The search field owns the keyboard; letting the button take focus
+            // would send the palette's own keys nowhere.
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => ctx.go({ kind: 'settings' })}
+          >
+            <GearGlyph />
+          </button>
+        )}
       </div>
     </div>
   );
@@ -358,6 +382,29 @@ function SearchGlyph(): ReactNode {
     <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden>
       <circle cx="7" cy="7" r="4.6" stroke="currentColor" strokeWidth="1.5" />
       <path d="M10.5 10.5 L14 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/* Six teeth, not eight: at 14px the extra pair closes the gaps and the whole
+   thing reads as a cog-shaped blob. Geometry is a stroked outline at
+   r=7 (tips) / 4.8 (roots), so it stays a gear at any size. */
+function GearGlyph(): ReactNode {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <path
+        d="M 6.20 3.55 L 6.31 1.21 A 7 7 0 0 1 9.69 1.21 L 9.80 3.55 A 4.8 4.8 0 0 1 10.96 4.22
+           L 13.04 3.14 A 7 7 0 0 1 14.73 6.07 L 12.75 7.33 A 4.8 4.8 0 0 1 12.75 8.67
+           L 14.73 9.93 A 7 7 0 0 1 13.04 12.86 L 10.96 11.78 A 4.8 4.8 0 0 1 9.80 12.45
+           L 9.69 14.79 A 7 7 0 0 1 6.31 14.79 L 6.20 12.45 A 4.8 4.8 0 0 1 5.04 11.78
+           L 2.96 12.86 A 7 7 0 0 1 1.27 9.93 L 3.25 8.67 A 4.8 4.8 0 0 1 3.25 7.33
+           L 1.27 6.07 A 7 7 0 0 1 2.96 3.14 L 5.04 4.22 A 4.8 4.8 0 0 1 6.20 3.55 Z"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+      <circle cx="8" cy="8" r="2.4" stroke="currentColor" strokeWidth="1.3" />
     </svg>
   );
 }

@@ -292,6 +292,31 @@ mark {
   padding-left: 10px;
 }
 
+/* The one pointer-driven affordance in the footer: everything else in the panel
+   is reachable by key, but Settings is where you land before you know the keys. */
+.footer .gear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-right: -4px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--faint);
+}
+
+.footer .hint + .gear {
+  margin-left: -2px;
+}
+
+.footer .gear:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
 kbd {
   font-family: inherit;
   font-size: 11px;
