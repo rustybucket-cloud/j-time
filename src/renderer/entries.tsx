@@ -117,14 +117,14 @@ function issueActions(item: IssueItem, ctx: Ctx): Entry[] {
         subtitle: 'Leaves the chunk unfiled, to attribute later',
         section: ACTIONS,
         accessories: <kbd>↩</kbd>,
-        run: () => ctx.act(() => window.jt.stop()),
+        run: () => ctx.actStay(() => window.jt.stop()),
       }
     : {
         id: 'act:start',
         title: story && story.segments.length > 0 ? 'Resume timer' : 'Start timer',
         section: ACTIONS,
         accessories: <kbd>↩</kbd>,
-        run: () => ctx.act(() => window.jt.start(key)),
+        run: () => ctx.actStay(() => window.jt.start(key)),
       };
 
   const file: Entry = {
@@ -320,10 +320,15 @@ export function issueEntries(ctx: Ctx): Entry[] {
     issue: item,
     // Enter is the thing you came here to do: put the clock on this story, or
     // take it off. Everything else is one more keystroke away under ⌘K.
+    //
+    // It stays open afterwards: starting a timer produces nothing you can see
+    // anywhere else, so a panel that vanished on Enter left you guessing whether
+    // the clock was running. Now the row moves under Running and the footer
+    // starts counting, in front of you.
     run: () =>
       item.running
-        ? ctx.act(() => window.jt.stop())
-        : ctx.act(() => window.jt.start(item.row.key)),
+        ? ctx.actStay(() => window.jt.stop())
+        : ctx.actStay(() => window.jt.start(item.row.key)),
     actions: issueActions(item, ctx),
   }));
 }

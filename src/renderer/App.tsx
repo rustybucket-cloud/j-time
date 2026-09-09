@@ -13,6 +13,9 @@ import { useAutoHeight, useNow, useReopened, useSnapshot } from './hooks';
 interface Toast {
   text: string;
   bad?: boolean;
+  /** Clears itself. Only for "it worked" — a progress toast is cleared by its own
+      promise, and an error should stay until something replaces it. */
+  transient?: boolean;
 }
 
 /** ⌘-shortcuts that run one of the selected story's actions by id. */
@@ -83,10 +86,9 @@ export function App(): ReactNode {
 
   // Starting a timer no longer closes the panel, so its toast now sits in the
   // footer in front of you — and that footer is also where the running clock
-  // lives. Clear the good ones so the clock comes back; errors stay until
-  // something else replaces them.
+  // lives. Hand it back once the message has been read.
   useEffect(() => {
-    if (!toast || toast.bad) return;
+    if (!toast?.transient) return;
     const id = setTimeout(() => setToast(null), 2500);
     return () => clearTimeout(id);
   }, [toast]);
@@ -109,7 +111,7 @@ export function App(): ReactNode {
       if (stay) {
         setOverlays([]);
         setQuery('');
-        setToast(result.message ? { text: result.message } : null);
+        setToast(result.message ? { text: result.message, transient: true } : null);
       } else {
         reset();
         void window.jt.hide();
