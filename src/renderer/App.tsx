@@ -161,6 +161,23 @@ export function App(): ReactNode {
     setSelectedId(next >= 0 ? ranked[next].item.id : null);
   };
 
+  /**
+   * The action list for a row, which is what ⌘K opens — and what a click does.
+   *
+   * Returns false when the row has none, so the caller can fall back to running
+   * it: the command rows and every picker level are single-purpose, and a click
+   * that drilled into nothing would leave them dead to the mouse.
+   */
+  const openActions = (entry: Entry): boolean => {
+    if (!entry.actions?.length) return false;
+    ctx?.push({
+      title: entry.title,
+      placeholder: `Actions for ${entry.title}`,
+      entries: entry.actions,
+    });
+    return true;
+  };
+
   const back = () => {
     if (overlays.length > 0) setOverlays((stack) => stack.slice(0, -1));
     else if (screen.kind !== 'list') setScreen({ kind: 'list' });
@@ -216,13 +233,7 @@ export function App(): ReactNode {
     }
     if (meta && e.key.toLowerCase() === 'k') {
       e.preventDefault();
-      if (selected?.actions?.length) {
-        ctx?.push({
-          title: selected.title,
-          placeholder: `Actions for ${selected.title}`,
-          entries: selected.actions,
-        });
-      }
+      if (selected) openActions(selected);
       return;
     }
     const shortcut = meta ? ACTION_SHORTCUTS[e.key.toLowerCase()] : undefined;
@@ -303,7 +314,13 @@ export function App(): ReactNode {
           ranked={ranked}
           selectedId={selected?.id ?? null}
           onSelect={setSelectedId}
-          onRun={(entry) => entry.run()}
+          // A click opens the actions rather than running the row. Enter is a
+          // deliberate keystroke on a row you moved the cursor to; a click is
+          // one gesture at whatever is under the pointer, and having that put a
+          // clock on a story — or take one off — is too much to hang on it.
+          onActivate={(entry) => {
+            if (!openActions(entry)) entry.run();
+          }}
           empty={<EmptyState snapshot={snapshot} query={query} inOverlay={overlay !== null} />}
         />
       )}

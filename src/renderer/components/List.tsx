@@ -32,12 +32,12 @@ function Row({
   ranked,
   selected,
   onSelect,
-  onRun,
+  onActivate,
 }: {
   ranked: Ranked<Entry>;
   selected: boolean;
   onSelect: () => void;
-  onRun: () => void;
+  onActivate: () => void;
 }): ReactNode {
   const node = useRef<HTMLDivElement>(null);
   const { item } = ranked;
@@ -53,7 +53,7 @@ function Row({
       ref={node}
       className={`row${selected ? ' selected' : ''}${item.running ? ' running' : ''}`}
       onMouseMove={selected ? undefined : onSelect}
-      onClick={onRun}
+      onClick={onActivate}
     >
       <span className="lead">{item.lead}</span>
       <span className="labels">
@@ -75,13 +75,14 @@ export function List({
   ranked,
   selectedId,
   onSelect,
-  onRun,
+  onActivate,
   empty,
 }: {
   ranked: Ranked<Entry>[];
   selectedId: string | null;
   onSelect: (id: string) => void;
-  onRun: (entry: Entry) => void;
+  /** What a click on a row does. Not the same as Enter — see App. */
+  onActivate: (entry: Entry) => void;
   empty: ReactNode;
 }): ReactNode {
   if (ranked.length === 0) return <div className="empty">{empty}</div>;
@@ -97,7 +98,7 @@ export function List({
               ranked={r}
               selected={r.item.id === selectedId}
               onSelect={() => onSelect(r.item.id)}
-              onRun={() => onRun(r.item)}
+              onActivate={() => onActivate(r.item)}
             />
           ))}
         </div>

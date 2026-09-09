@@ -100,6 +100,19 @@ async function capture(file: string): Promise<void> {
   // JT_CAPTURE_KEYS drives the palette first, so the screens you can only reach by
   // typing are reviewable too: "cmd+k" for the action list, "cmd+," for Settings.
   for (const chord of (process.env.JT_CAPTURE_KEYS ?? '').split(',').filter(Boolean)) {
+    // "click:x:y" for the things only a pointer can reach — colons, so the list
+    // stays comma-separated. `modifiers` matters here for the same reason it does
+    // below: omitting it drops the event, which looks exactly like a click that
+    // missed the row.
+    if (chord.startsWith('click:')) {
+      const [x, y] = chord.slice(6).split(':').map(Number);
+      const at = { x, y, button: 'left', clickCount: 1, modifiers: [] };
+      panel.webContents.sendInputEvent({ type: 'mouseMove', x, y, modifiers: [] } as never);
+      panel.webContents.sendInputEvent({ type: 'mouseDown', ...at } as never);
+      panel.webContents.sendInputEvent({ type: 'mouseUp', ...at } as never);
+      await new Promise((r) => setTimeout(r, 500));
+      continue;
+    }
     const parts = chord.split('+').map((p) => p.trim().toLowerCase());
     const keyCode = parts.pop() ?? '';
     const modifiers = parts.map((m) => (m === 'cmd' ? 'meta' : m));
@@ -119,8 +132,11 @@ async function capture(file: string): Promise<void> {
   }
 
   // An action that succeeds hides the panel, and capturePage on a hidden window
-  // never settles — so show it again and never wait on it forever.
-  showPanel();
+  // never settles — so show it again and never wait on it forever. Only if it
+  // really is hidden, though: showPanel broadcasts `palette:opened`, and the
+  // renderer resets on it, which would throw away the screen the keys just
+  // reached.
+  if (!panel.isVisible()) showPanel();
   await new Promise((r) => setTimeout(r, 300));
   const image = await Promise.race([
     panel.webContents.capturePage(),
