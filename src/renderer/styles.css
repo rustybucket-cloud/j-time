@@ -1,0 +1,486 @@
+/*
+ * Design tokens, carried over from jira-timer along with the two rules that are
+ * easy to undo by accident:
+ *
+ *   One accent. --accent is every interactive thing. --warn and --danger are for
+ *   things wanting attention. Green (--ok) is status only — the connection dot —
+ *   and deliberately not a UI colour.
+ *
+ *   Neutrals are near-black at ~8% saturation. They were 26% once, which read as
+ *   navy. Keep new surfaces in the same family rather than introducing a tint.
+ */
+
+:root {
+  --bg: hsl(240 8% 8% / 0.82);
+  --surface: hsl(240 8% 14%);
+  --surface-hi: hsl(240 8% 19%);
+  --line: hsl(240 8% 24%);
+  --text: hsl(240 8% 95%);
+  --dim: hsl(240 8% 68%);
+  --faint: hsl(240 8% 48%);
+  --accent: hsl(217 91% 62%);
+  --accent-soft: hsl(217 91% 62% / 0.16);
+  --ok: hsl(142 65% 48%);
+  --warn: hsl(38 92% 58%);
+  --danger: hsl(0 72% 60%);
+
+  --radius: 12px;
+  --row-height: 44px;
+  --pad: 14px;
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+}
+
+body {
+  font: 13px/1.45 -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  /* The whole panel is a launcher: nothing in it is a document to select from. */
+  user-select: none;
+  cursor: default;
+}
+
+#root {
+  height: 100%;
+}
+
+/* The panel itself. The window is transparent; this is the only visible surface,
+   so it owns the radius and the hairline that reads as an edge over any wallpaper. */
+.panel {
+  display: flex;
+  flex-direction: column;
+  max-height: 640px;
+  background: var(--bg);
+  border: 1px solid hsl(0 0% 100% / 0.09);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+/* --- Search field --- */
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 52px;
+  padding: 0 var(--pad);
+  flex: 0 0 auto;
+  /* Drag would move a window that is deliberately not movable, but without this
+     the whole header swallows the cursor as if it were text. */
+  -webkit-app-region: drag;
+}
+
+.search input {
+  -webkit-app-region: no-drag;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 400;
+  padding: 0;
+}
+
+.search input::placeholder {
+  color: var(--faint);
+}
+
+.search .glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--faint);
+  width: 16px;
+  flex: 0 0 auto;
+}
+
+.search .back {
+  -webkit-app-region: no-drag;
+  color: var(--dim);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.divider {
+  height: 1px;
+  background: var(--line);
+  flex: 0 0 auto;
+}
+
+/* --- List --- */
+
+.list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 6px;
+  scrollbar-width: none;
+}
+
+.list::-webkit-scrollbar {
+  display: none;
+}
+
+.section-label {
+  padding: 8px 8px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: var(--row-height);
+  padding: 0 8px;
+  border-radius: 8px;
+  cursor: default;
+}
+
+.row.selected {
+  background: var(--surface-hi);
+}
+
+.row .lead {
+  width: 18px;
+  text-align: center;
+  color: var(--faint);
+  font-size: 13px;
+  flex: 0 0 auto;
+}
+
+.row.running .lead {
+  color: var(--accent);
+}
+
+.row .labels {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.row .title {
+  font-weight: 600;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.row .subtitle {
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.row .accessories {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  color: var(--faint);
+  font-size: 12px;
+}
+
+/* Highlights for the characters the query matched. */
+mark {
+  background: transparent;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* --- Small pieces --- */
+
+.pill {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.pill.accent {
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.pill.warn {
+  border-color: transparent;
+  background: hsl(38 92% 58% / 0.15);
+  color: var(--warn);
+}
+
+.clock {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+.clock.live {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--faint);
+  flex: 0 0 auto;
+}
+
+.dot.ok {
+  background: var(--ok);
+}
+
+.dot.bad {
+  background: var(--danger);
+}
+
+/* --- Footer --- */
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 var(--pad);
+  flex: 0 0 auto;
+  color: var(--faint);
+  font-size: 11.5px;
+  background: hsl(240 8% 11% / 0.6);
+}
+
+.footer .spacer {
+  flex: 1;
+}
+
+.footer .hint {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.footer .hint + .hint {
+  border-left: 1px solid var(--line);
+  padding-left: 10px;
+}
+
+kbd {
+  font-family: inherit;
+  font-size: 11px;
+  min-width: 17px;
+  padding: 1px 4px;
+  text-align: center;
+  border-radius: 4px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--dim);
+}
+
+.toast {
+  color: var(--text);
+}
+
+.toast.bad {
+  color: var(--danger);
+}
+
+/* --- Empty and busy states --- */
+
+.empty {
+  padding: 30px 16px 34px;
+  text-align: center;
+  color: var(--faint);
+}
+
+.empty strong {
+  display: block;
+  color: var(--dim);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+/* --- Detail: the activity breakdown, carried over from the story card --- */
+
+.detail {
+  padding: 12px 16px 16px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.detail::-webkit-scrollbar {
+  display: none;
+}
+
+.detail h2 {
+  margin: 0 0 2px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.detail .summary {
+  color: var(--dim);
+  margin-bottom: 12px;
+}
+
+.detail .bigclock {
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin-bottom: 2px;
+}
+
+.detail .meta {
+  color: var(--faint);
+  margin-bottom: 14px;
+}
+
+.bar {
+  margin-bottom: 9px;
+}
+
+.bar .bar-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.bar .bar-head .name {
+  color: var(--dim);
+}
+
+.bar .track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface);
+  overflow: hidden;
+  display: flex;
+}
+
+/* Banked time is solid; the pending part is the same colour at low opacity, so a
+   bar reads as one quantity split rather than as two unrelated ones. */
+.bar .banked {
+  background: var(--accent);
+}
+
+.bar .pending {
+  background: var(--accent-soft);
+}
+
+.bar.untracked .banked {
+  background: var(--faint);
+}
+
+/* --- Settings --- */
+
+.settings {
+  padding: 6px 16px 16px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.settings::-webkit-scrollbar {
+  display: none;
+}
+
+.field {
+  margin-bottom: 12px;
+}
+
+.field label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin-bottom: 5px;
+}
+
+.field input[type='text'],
+.field input[type='password'],
+.field input[type='number'] {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  outline: none;
+  user-select: text;
+}
+
+.field input:focus {
+  border-color: var(--accent);
+}
+
+.field .note {
+  margin-top: 5px;
+  color: var(--faint);
+  font-size: 11.5px;
+}
+
+.field.row2 {
+  display: flex;
+  gap: 12px;
+}
+
+.field.row2 > div {
+  flex: 1;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--dim);
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 11px;
+  border-radius: 7px;
+  margin-bottom: 12px;
+  background: var(--surface);
+  border-left: 3px solid var(--faint);
+  color: var(--dim);
+}
+
+.banner.bad {
+  border-left-color: var(--danger);
+}
+
+.banner.warn {
+  border-left-color: var(--warn);
+}
