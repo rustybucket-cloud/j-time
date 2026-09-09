@@ -6,7 +6,19 @@ against JIRA without leaving the keyboard.
 
 ![The palette](docs/images/palette.png)
 
-## Install
+## Download
+
+Grab the latest `.dmg` from the [Releases page](https://github.com/rustybucket-cloud/j-time/releases)
+— `arm64` for Apple silicon, `x64` for Intel. Open it and drag **j-time** to
+Applications.
+
+The build is unsigned, so the first launch needs one extra step: right-click the
+app and choose **Open**, then **Open** again in the dialog. (Or clear the
+quarantine flag: `xattr -dr com.apple.quarantine /Applications/j-time.app`.)
+
+There's no window in the Dock — it lives in the menu bar. Press `⌘⇧J`.
+
+## Build it yourself
 
 ```bash
 npm install

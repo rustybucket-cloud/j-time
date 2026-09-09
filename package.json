@@ -32,12 +32,43 @@
   "build": {
     "appId": "dev.pattonja.jtime",
     "productName": "j-time",
-    "directories": { "output": "release", "buildResources": "build" },
-    "files": ["out/**/*", "package.json"],
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
     "mac": {
       "category": "public.app-category.productivity",
-      "target": ["dmg", "zip"],
-      "extendInfo": { "LSUIElement": true }
-    }
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "extendInfo": {
+        "LSUIElement": true
+      },
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "rustybucket-cloud",
+        "repo": "j-time"
+      }
+    ]
   }
 }
