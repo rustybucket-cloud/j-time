@@ -12,11 +12,39 @@ Grab the latest `.dmg` from the [Releases page](https://github.com/rustybucket-c
 — `arm64` for Apple silicon, `x64` for Intel. Open it and drag **j-time** to
 Applications.
 
-The build is unsigned, so the first launch needs one extra step: right-click the
-app and choose **Open**, then **Open** again in the dialog. (Or clear the
-quarantine flag: `xattr -dr com.apple.quarantine /Applications/j-time.app`.)
+### The first launch
 
-There's no window in the Dock — it lives in the menu bar. Press `⌘⇧J`.
+The build is unsigned — signing it needs a paid Apple Developer account — so
+macOS blocks it once before it will ever run. What you'll see is a dialog saying
+j-time "is damaged" or "cannot be opened because Apple cannot check it for
+malicious software". Nothing is damaged; that's the wording for *no signature*.
+
+**On macOS Sequoia (15) and later**, including Tahoe (26):
+
+1. Double-click **j-time**. Dismiss the dialog it throws.
+2. Open **System Settings → Privacy & Security** and scroll to the bottom. There's
+   a line about j-time being blocked, with an **Open Anyway** button. Click it.
+3. Confirm with Touch ID or your password, then **Open** in the last dialog.
+
+Sequoia removed the old Control-click shortcut, so step 2 is not optional there.
+
+**On Sonoma (14) and earlier**, the shorter dance still works: right-click (or
+Control-click) the app in Applications, choose **Open**, then **Open** again in
+the dialog that appears.
+
+**Either version**, from a terminal, in one line:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/j-time.app
+```
+
+That strips the quarantine flag macOS attaches to downloads, and the app opens
+normally from then on.
+
+You only do this once per install — but a new release is a new download, so
+each upgrade asks again.
+
+There's no window and no Dock icon — it lives in the menu bar. Press `⌘⇧J`.
 
 ## Build it yourself
 
