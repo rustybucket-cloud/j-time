@@ -13,7 +13,7 @@
 
 import type { CheckState, PullRequest, ReviewDecision } from '@shared/prs';
 import { unauthorizedOrgs } from '@shared/prs';
-import type { GithubConfig } from '@shared/github';
+import type { GithubAccount } from '@shared/github';
 
 const PR_FIELDS = `
   number
@@ -114,14 +114,15 @@ function toPull(raw: RawPull, login: string, reviewRequested: boolean): PullRequ
   };
 }
 
-export function createGithub(config: GithubConfig): GithubClient {
-  const base = (config.host || '').trim().replace(/\/$/, '');
+/** One client per account: one token, one host, one owner's worth of work. */
+export function createGithub(account: GithubAccount, limit: number): GithubClient {
+  const base = (account.host || '').trim().replace(/\/$/, '');
 
   async function graphql(variables: Record<string, unknown>): Promise<Record<string, never>> {
     const response = await fetch(`${base}/graphql`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${config.token}`,
+        Authorization: `Bearer ${account.token}`,
         'Content-Type': 'application/json',
         // GitHub rejects requests with no user agent outright.
         'User-Agent': 'j-time',
@@ -154,7 +155,7 @@ export function createGithub(config: GithubConfig): GithubClient {
     try {
       const response = await fetch(`${base}/user/orgs?per_page=100`, {
         headers: {
-          Authorization: `Bearer ${config.token}`,
+          Authorization: `Bearer ${account.token}`,
           Accept: 'application/vnd.github+json',
           'User-Agent': 'j-time',
         },
@@ -176,7 +177,7 @@ export function createGithub(config: GithubConfig): GithubClient {
       const data = (await graphql({
         review: 'is:open is:pr review-requested:@me archived:false',
         mine: 'is:open is:pr author:@me archived:false',
-        limit: config.limit,
+        limit,
       })) as unknown as {
         viewer: { login: string; organizations: { nodes: ({ login: string } | null)[] } };
         review: { nodes: (RawPull | null)[] };

@@ -107,8 +107,15 @@ export interface RootConfig {
  * The store has to be told rather than guessing: it is the only place that knows
  * how to encrypt, and the plugins are the only things that know which of their
  * fields is a credential.
+ *
+ * `{ list, field }` covers a plugin that holds *several* credentials — the PR
+ * plugin keeps one token per account, because a fine-grained token can only
+ * speak for one owner. Without it the choice would be encrypting a whole array
+ * as an opaque blob, which makes the rest of the account unreadable, or leaving
+ * the tokens in cleartext.
  */
-export type SecretFields = Record<string, readonly string[]>;
+export type SecretField = string | { list: string; field: string };
+export type SecretFields = Record<string, readonly SecretField[]>;
 
 /**
  * On disk a secret is encrypted under `<field>Enc`, so config.json can't be read
@@ -120,44 +127,57 @@ export type SecretFields = Record<string, readonly string[]>;
  */
 const encKey = (field: string): string => `${field}Enc`;
 
-function decryptSecrets(
-  raw: Record<string, unknown>,
-  fields: readonly string[],
-): Record<string, unknown> {
+function decryptOne(raw: Record<string, unknown>, field: string): Record<string, unknown> {
   const out = { ...raw };
-  for (const field of fields) {
-    const sealed = out[encKey(field)];
-    delete out[encKey(field)];
-    if (typeof sealed === 'string' && sealed) {
-      try {
-        out[field] = safeStorage.decryptString(Buffer.from(sealed, 'base64'));
-        continue;
-      } catch {
-        // A keychain entry from another machine, or a reset login keychain. Treat
-        // it as absent so the app asks again rather than sending garbage.
-        out[field] = '';
-        continue;
-      }
+  const sealed = out[encKey(field)];
+  delete out[encKey(field)];
+  if (typeof sealed === 'string' && sealed) {
+    try {
+      out[field] = safeStorage.decryptString(Buffer.from(sealed, 'base64'));
+      return out;
+    } catch {
+      // A keychain entry from another machine, or a reset login keychain. Treat
+      // it as absent so the app asks again rather than sending garbage.
+      out[field] = '';
+      return out;
     }
-    if (typeof out[field] !== 'string') out[field] = '';
+  }
+  if (typeof out[field] !== 'string') out[field] = '';
+  return out;
+}
+
+function encryptOne(raw: Record<string, unknown>, field: string): Record<string, unknown> {
+  const out = { ...raw };
+  const value = out[field];
+  delete out[field];
+  if (typeof value !== 'string' || !value) return out;
+  if (safeStorage.isEncryptionAvailable()) {
+    out[encKey(field)] = safeStorage.encryptString(value).toString('base64');
+  } else {
+    out[field] = value;
   }
   return out;
 }
 
-function encryptSecrets(
+/** Apply `fn` to a plugin's secret fields, whether flat or one per list entry. */
+function mapSecrets(
   raw: Record<string, unknown>,
-  fields: readonly string[],
+  fields: readonly SecretField[],
+  fn: (obj: Record<string, unknown>, field: string) => Record<string, unknown>,
 ): Record<string, unknown> {
-  const out = { ...raw };
-  for (const field of fields) {
-    const value = out[field];
-    delete out[field];
-    if (typeof value !== 'string' || !value) continue;
-    if (safeStorage.isEncryptionAvailable()) {
-      out[encKey(field)] = safeStorage.encryptString(value).toString('base64');
-    } else {
-      out[field] = value;
+  let out = { ...raw };
+  for (const spec of fields) {
+    if (typeof spec === 'string') {
+      out = fn(out, spec);
+      continue;
     }
+    const list = out[spec.list];
+    if (!Array.isArray(list)) continue;
+    out[spec.list] = list.map((entry) =>
+      entry && typeof entry === 'object'
+        ? fn(entry as Record<string, unknown>, spec.field)
+        : entry,
+    );
   }
   return out;
 }
@@ -190,7 +210,7 @@ export async function readConfig(secrets: SecretFields): Promise<RootConfig> {
   const storedPlugins = (stored.plugins ?? {}) as PluginConfigs;
   const plugins: PluginConfigs = {};
   for (const [id, fields] of Object.entries(secrets)) {
-    plugins[id] = decryptSecrets(storedPlugins[id] ?? {}, fields);
+    plugins[id] = mapSecrets(storedPlugins[id] ?? {}, fields, decryptOne);
   }
   // A section belonging to a plugin that isn't installed this launch is carried
   // through untouched, so uninstalling one doesn't wipe its credentials.
@@ -208,7 +228,7 @@ export async function readConfig(secrets: SecretFields): Promise<RootConfig> {
 export async function writeConfig(root: RootConfig, secrets: SecretFields): Promise<void> {
   const plugins: PluginConfigs = {};
   for (const [id, raw] of Object.entries(root.plugins)) {
-    plugins[id] = encryptSecrets(raw, secrets[id] ?? []);
+    plugins[id] = mapSecrets(raw, secrets[id] ?? [], encryptOne);
   }
   await writeAtomic(
     CONFIG_FILE,

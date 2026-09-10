@@ -27,6 +27,8 @@ export interface PullRequest {
   reviewRequested: boolean;
   /** You opened it. */
   mine: boolean;
+  /** Which configured account this came back from. */
+  account?: string;
 }
 
 export const NEEDS_REVIEW = 'Needs your review';

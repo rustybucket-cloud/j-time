@@ -272,6 +272,17 @@ blank a list you're about to act on, and every action except the two that call
 JIRA works fine against stale rows. This is the shell's guarantee now, and it
 applies per section: one plugin failing leaves the others live.
 
+**One token per account, because a fine-grained token speaks for one owner.**
+A fine-grained PAT has exactly one resource owner — your user, or one org — so
+a single token cannot span personal repos and two work orgs, and orgs that
+mandate them make "one token" wrong outright. `GithubConfig.accounts` is the
+unit; the store encrypts each entry's token via `{ list, field }`, and
+`mergeConfig` on the plugin matches accounts **by id** when the form sends a
+blank token, because lining them up by index moves one account's token onto
+another's host the first time somebody reorders the list. Accounts fail
+independently: `allSettled`, a row per broken one, and the section only counts
+as failed when every account is.
+
 **An org enforcing SAML SSO withholds results silently.** REST answers 403 with
 an `X-GitHub-SSO` header, which is easy. GraphQL *search* does not: it returns
 HTTP 200, no header, and simply fewer pull requests — so an unauthorised token
@@ -287,6 +298,14 @@ working fetch is worse than no diagnostic.
 docs rather than assumed: "if the requested person is on a team that is
 requested for review, then review requests for that team will also appear".
 `user-review-requested:` is the direct-only one — don't "fix" the query to that.
+
+**Unverified: whether GraphQL `search` returns anything useful to a
+fine-grained token.** Everything the PR section lists comes from `search`, and
+a fine-grained token is scoped to selected repositories — so it may see only
+those, or nothing. Nobody has tested it against a real fine-grained token yet.
+If it turns out search is unusable, authored PRs can come from
+`viewer { pullRequests }` with no search index involved; review requests have
+no such connection and would need per-repo enumeration.
 
 **GitHub is GraphQL, not REST search.** `reviewDecision` and the check rollup
 don't exist on REST's issue search results, and those two things are most of

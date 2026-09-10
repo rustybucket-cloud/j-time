@@ -218,9 +218,19 @@ export async function savePluginConfig(
   const entry = registry.get(id);
   if (!entry) return { ok: false, error: `No plugin called ${id}` };
 
-  const next = { ...configFor(id), ...patch };
-  for (const field of entry.plugin.secrets) {
-    if (patch[field] === undefined) next[field] = configFor(id)[field];
+  const previous = configFor(id);
+  let next: Record<string, unknown>;
+  if (entry.plugin.mergeConfig) {
+    next = entry.plugin.mergeConfig(previous, patch) as Record<string, unknown>;
+  } else {
+    next = { ...previous, ...patch };
+    // A form never receives a token, so an untouched field must not erase one.
+    // Only flat secrets are handled here; a plugin with a list of them supplies
+    // `mergeConfig` instead, because only it knows how the entries line up.
+    for (const spec of entry.plugin.secrets) {
+      if (typeof spec !== 'string') continue;
+      if (patch[spec] === undefined) next[spec] = previous[spec];
+    }
   }
   root = { ...root, plugins: { ...root.plugins, [id]: next } };
 

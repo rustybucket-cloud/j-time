@@ -721,3 +721,46 @@ kbd {
   color: var(--dim);
   white-space: nowrap;
 }
+
+/* --- One GitHub account per token --- */
+
+.account {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+
+.account-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.account-label {
+  flex: 1 1 auto;
+  font-weight: 600;
+}
+
+.account-head button,
+.add-account {
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--dim);
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: default;
+}
+
+.account-head button:hover,
+.add-account:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.note.bad {
+  color: var(--danger);
+}

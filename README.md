@@ -77,8 +77,18 @@ and you can use one without the other.
 
 Also there: the activity labels you file time under, and the rounding increment.
 
-**Pull Requests** needs a GitHub personal access token with `repo` and
-`read:org`. The API root defaults to `https://api.github.com`; point it at
+**Pull Requests** takes one *account* per token, because a fine-grained token
+only ever speaks for one owner — your personal repos and each work org need
+their own. Add as many as you have.
+
+- **Fine-grained token**: `Pull requests: Read` and `Metadata: Read` on the
+  repositories you want, plus `Members: Read` if you'd like to be told about
+  orgs the token can't see.
+- **Classic token**: `repo` and `read:org`. If an org enforces SAML SSO, use
+  **Configure SSO → Authorize** on the token, or its pull requests are withheld
+  with no error.
+
+The API root defaults to `https://api.github.com`; point it at
 `https://your-company.com/api` for GitHub Enterprise.
 
 Both tokens are stored encrypted with Electron's safeStorage.

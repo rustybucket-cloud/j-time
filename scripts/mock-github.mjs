@@ -86,6 +86,18 @@ const json = (res, status, body) => {
   res.end(JSON.stringify(body));
 };
 
+/**
+ * A second token, standing in for a work org's fine-grained one: it sees a
+ * different pull request and a different blocked org, so merging and the
+ * per-account rows both have something to show.
+ */
+const WORK_TOKEN = 'sandbox-work-token';
+const WORK = [
+  pull(7, 'org-work/api', 'Paginate the exports endpoint', ME, {
+    updatedAt: now - 45 * MINUTE,
+  }),
+];
+
 const server = createServer((req, res) => {
   let body = '';
   req.on('data', (chunk) => (body += chunk));
@@ -94,21 +106,23 @@ const server = createServer((req, res) => {
       json(res, 401, { message: 'Bad credentials' });
       return;
     }
+    const work = (req.headers.authorization ?? '').endsWith(WORK_TOKEN);
     if (req.method === 'GET' && req.url.startsWith('/user/orgs')) {
-      console.log('user/orgs');
-      json(res, 200, ALL_ORGS.map((login) => ({ login })));
+      console.log('user/orgs', work ? '(work)' : '');
+      json(res, 200, (work ? ['org-work'] : ALL_ORGS).map((login) => ({ login })));
       return;
     }
     if (req.method !== 'POST' || !req.url.startsWith('/graphql')) {
       res.writeHead(404).end('not found');
       return;
     }
-    console.log('graphql', JSON.parse(body).variables?.limit ?? '');
+    console.log('graphql', work ? '(work)' : '', JSON.parse(body).variables?.limit ?? '');
+    const visible = work ? ['org-work'] : VISIBLE_ORGS;
     json(res, 200, {
       data: {
-        viewer: { login: ME, organizations: { nodes: VISIBLE_ORGS.map((login) => ({ login })) } },
-        review: { nodes: REVIEW },
-        mine: { nodes: MINE },
+        viewer: { login: ME, organizations: { nodes: visible.map((login) => ({ login })) } },
+        review: { nodes: work ? [] : REVIEW },
+        mine: { nodes: work ? WORK : MINE },
       },
     });
   });

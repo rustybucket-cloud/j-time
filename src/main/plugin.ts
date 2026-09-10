@@ -13,6 +13,7 @@
 
 import type { MenuItemConstructorOptions } from 'electron';
 import type { ActionResult, QueryResult } from '@shared/plugin';
+import type { SecretField } from './store';
 
 export type Command = (args: unknown[]) => Promise<ActionResult> | ActionResult;
 export type Query = (args: unknown[]) => Promise<QueryResult<unknown>>;
@@ -33,7 +34,7 @@ export interface MainPlugin<S = unknown, C = Record<string, unknown>> {
   id: string;
   title: string;
   /** Config fields that are credentials, so the store knows what to encrypt. */
-  secrets: readonly string[];
+  secrets: readonly SecretField[];
   /** How often to re-read while the app runs. */
   refreshMs: number;
   defaults(): C;
@@ -41,6 +42,15 @@ export interface MainPlugin<S = unknown, C = Record<string, unknown>> {
   init(host: PluginHost): void;
   /** Applied at startup and after every save. */
   configure(config: C): Promise<void> | void;
+  /**
+   * Fold a settings patch onto the stored config.
+   *
+   * The default keeps any secret the patch left out, so a form that never
+   * received a token can't erase one. A plugin holding *several* credentials
+   * has to say how they line up — the shell can't know that an account keeps
+   * its token when the patch identifies it by id and sends the field blank.
+   */
+  mergeConfig?(previous: C, patch: Partial<C>): C;
   /** False when there aren't enough credentials to try. */
   configured(): boolean;
   /** The plugin's slice of the snapshot, as the renderer will see it. */
