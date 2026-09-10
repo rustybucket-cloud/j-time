@@ -6,7 +6,7 @@
 
 import { promises as fs } from 'fs';
 import { app, globalShortcut } from 'electron';
-import { DEFAULT_HOTKEY, missingCreds } from '@shared/conn';
+import { DEFAULT_HOTKEY } from '@shared/conn';
 import * as data from './data';
 import { registerIpc } from './ipc';
 import { beginQuit, createPanel, getPanel, showPanel, togglePanel } from './panel';
@@ -64,9 +64,10 @@ if (!app.requestSingleInstanceLock()) {
     void data.refresh();
     poll = data.startPolling();
 
-    // With no credentials there is nothing to show and no reason to expect the
-    // user to guess the hotkey, so the first launch opens itself.
-    if (missingCreds(data.currentConfig()).length > 0) showPanel();
+    // Launch opens the panel: a menu-bar app that starts silently looks like it
+    // failed to start, and with no credentials there is nothing to show anyway
+    // and no reason to expect the user to guess the hotkey.
+    showPanel();
 
     if (process.env.JT_CAPTURE) void capture(process.env.JT_CAPTURE);
   });
