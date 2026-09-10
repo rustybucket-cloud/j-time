@@ -60,9 +60,9 @@ function actions(item: PrItem, ctx: Ctx): Row[] {
 function blockedRows(snapshot: GithubSnapshot): Row[] {
   return snapshot.blockedOrgs.map((org) => ({
     id: `sso:${org}`,
-    title: `${org} needs authorising`,
-    subtitle: 'SAML SSO — its pull requests are being withheld. Press ↩ to authorise.',
-    keywords: ['sso', 'saml', 'permission', org],
+    title: `${org} can’t be read by this token`,
+    subtitle: 'You’re a member, so its pull requests are missing here. ↩ to authorise it.',
+    keywords: ['sso', 'saml', 'permission', 'missing', org],
     subsection: 'Not connected',
     lead: 'blocked' as const,
     enterLabel: 'Authorise',

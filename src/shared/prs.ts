@@ -139,6 +139,17 @@ export function pinnedPull(items: PrItem[]): PrItem | null {
  *
  * Getting this wrong in the quiet direction is what makes it worth detecting: a
  * whole org's work vanishes and the section just says "Nothing open".
+ *
+ * It stays a *difference of two lists* rather than a confirmed diagnosis, and
+ * the wording it produces says only what was observed. Confirming SSO
+ * specifically would need a probe, and there isn't one: `/orgs/<org>/repos`,
+ * `/orgs/<org>/members`, `/orgs/<org>/teams` and `/user/memberships/orgs/<org>`
+ * all answer 200 for a blocked org. Only fetching one of its *private* repos
+ * returns the 403 with `X-GitHub-SSO`, and a token that can't see them can't
+ * name one to ask about. A fine-grained token, which is scoped to a single
+ * owner, can also land here for reasons that aren't SSO at all — so the row
+ * this feeds reports the symptom and offers the usual fix, rather than
+ * announcing a cause.
  */
 export function unauthorizedOrgs(memberships: string[], visible: string[]): string[] {
   const seen = new Set(visible.map((o) => o.toLowerCase()));
