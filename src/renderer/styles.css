@@ -62,6 +62,8 @@ body {
 .panel {
   display: flex;
   flex-direction: column;
+  /* The footer menu is absolutely positioned against this. */
+  position: relative;
   max-height: 640px;
   background: var(--bg);
   border: 1px solid hsl(0 0% 100% / 0.09);
@@ -312,14 +314,15 @@ mark {
 }
 
 /* The one pointer-driven affordance in the footer: everything else in the panel
-   is reachable by key, but Settings is where you land before you know the keys. */
-.footer .gear {
+   is reachable by key, but this is where you land before you know the keys —
+   and it is the only visible way out of an app with no dock icon and no menu. */
+.footer .app-menu {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 22px;
   height: 22px;
-  margin-right: -4px;
+  margin-left: -4px;
   padding: 0;
   border: 0;
   border-radius: 6px;
@@ -327,13 +330,62 @@ mark {
   color: var(--faint);
 }
 
-.footer .hint + .gear {
-  margin-left: -2px;
-}
-
-.footer .gear:hover {
+.footer .app-menu:hover {
   background: var(--surface);
   color: var(--text);
+}
+
+/* The menu it opens: a popover over the list rather than another level of the
+   palette. It is four app-level things, and pushing a whole screen for them lost
+   the row you were pointing at. Anchored above the footer and inside the panel,
+   which clips its own overflow. */
+.app-menu-pop {
+  position: absolute;
+  z-index: 11;
+  left: 8px;
+  bottom: 42px;
+  min-width: 210px;
+  /* The panel is only as tall as its contents, and an empty list is short. */
+  max-height: calc(100% - 60px);
+  overflow-y: auto;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 12px 28px hsl(0 0% 0% / 0.45);
+}
+
+.app-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--dim);
+  font: inherit;
+  text-align: left;
+}
+
+.app-menu-item .label {
+  flex: 1;
+}
+
+.app-menu-item.on {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+/* Catches the press that dismisses the menu, so it doesn't also land on the row
+   underneath. */
+.scrim {
+  position: absolute;
+  z-index: 10;
+  inset: 0;
 }
 
 kbd {

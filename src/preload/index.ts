@@ -32,6 +32,7 @@ const bridge: Bridge = {
   setHeight: (height) => ipcRenderer.invoke('setHeight', height),
   setDismissOnBlur: (value) => ipcRenderer.invoke('setDismissOnBlur', value),
   hide: () => ipcRenderer.invoke('hide'),
+  openUrl: (url: string) => ipcRenderer.invoke('openUrl', url),
   quit: () => ipcRenderer.invoke('quit'),
 };
 

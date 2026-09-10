@@ -82,7 +82,13 @@ the top with a live clock.
 | `⌘I` | Clock, activity breakdown, estimate |
 | `⌘O` / `⌘C` | Open in JIRA / copy the key |
 | `⌘R` / `⌘,` | Refresh the board / Settings |
+| `⌘Q` | Quit |
 | `⎋` or `⌫` | Back one level, then close |
+
+The button at the bottom-left of the palette opens the app's own menu — Settings,
+refresh, JIRA in a browser, and quitting. With no Dock icon and no application
+menu, that button and the menu bar item are the only ways out that don't need a
+keystroke.
 
 The menu bar ticks whenever the clock is running. Right-click it for stop, file
 and refresh.

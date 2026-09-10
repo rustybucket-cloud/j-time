@@ -4,7 +4,16 @@ import { connMessage } from '@shared/conn';
 import type { Snapshot } from '@shared/ipc';
 import { prettyAccelerator } from '@shared/keys';
 import { activeSeconds, formatClock } from '@shared/time';
-import { commandEntries, issueEntries, runningRow, type Ctx, type Entry, type Overlay, type Screen } from './entries';
+import {
+  appMenuEntries,
+  commandEntries,
+  issueEntries,
+  runningRow,
+  type Ctx,
+  type Entry,
+  type Overlay,
+  type Screen,
+} from './entries';
 import { List } from './components/List';
 import { Detail } from './components/Detail';
 import { Settings } from './components/Settings';
@@ -36,6 +45,8 @@ export function App(): ReactNode {
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
+  /** The footer menu: a popover over the panel, not a level of the palette. */
+  const [menu, setMenu] = useState<number | null>(null);
 
   const root = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
@@ -62,6 +73,7 @@ export function App(): ReactNode {
     setQuery('');
     setSelectedId(null);
     setToast(null);
+    setMenu(null);
   }, []);
 
   // `palette:opened` can be sent before the renderer has finished loading, in
@@ -178,6 +190,8 @@ export function App(): ReactNode {
     return true;
   };
 
+  const menuEntries = useMemo(() => (ctx ? appMenuEntries(ctx) : []), [ctx]);
+
   const back = () => {
     if (overlays.length > 0) setOverlays((stack) => stack.slice(0, -1));
     else if (screen.kind !== 'list') setScreen({ kind: 'list' });
@@ -186,6 +200,29 @@ export function App(): ReactNode {
 
   function onKeyDown(e: React.KeyboardEvent): void {
     const meta = e.metaKey || e.ctrlKey;
+
+    // The popover takes the arrows and Enter off the list underneath it. ⌘-keys
+    // fall through on purpose: ⌘Q and ⌘, do the same thing either way.
+    if (menu !== null && !e.metaKey) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setMenu(null);
+        return;
+      }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || (e.ctrlKey && 'np'.includes(e.key.toLowerCase()))) {
+        e.preventDefault();
+        const delta = e.key === 'ArrowUp' || e.key.toLowerCase() === 'p' ? -1 : 1;
+        setMenu(nextIndex(menuEntries.length, menu, delta));
+        return;
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const entry = menuEntries[menu];
+        setMenu(null);
+        entry?.run();
+        return;
+      }
+    }
 
     if (e.key === 'Escape') {
       e.preventDefault();
@@ -325,8 +362,47 @@ export function App(): ReactNode {
         />
       )}
 
+      {menu !== null && (
+        <>
+          {/* Click-away. mousedown rather than click, so the press that dismisses
+              the menu doesn't also land on whatever is underneath it. */}
+          <div className="scrim" onMouseDown={() => setMenu(null)} />
+          <div className="app-menu-pop" role="menu">
+            {menuEntries.map((entry, i) => (
+              <button
+                key={entry.id}
+                type="button"
+                role="menuitem"
+                className={`app-menu-item${i === menu ? ' on' : ''}`}
+                onMouseEnter={() => setMenu(i)}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  setMenu(null);
+                  entry.run();
+                }}
+              >
+                <span className="label">{entry.title}</span>
+                {entry.accessories}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
       <div className="divider" />
       <div className="footer">
+        <button
+          type="button"
+          className="app-menu"
+          title="j-time"
+          aria-label="j-time menu"
+          // The search field owns the keyboard; letting the button take focus
+          // would send the palette's own keys nowhere.
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => setMenu((open) => (open === null ? 0 : null))}
+        >
+          <MenuGlyph />
+        </button>
         <span className={`dot ${snapshot.conn.ok ? 'ok' : 'bad'}`} />
         {toast ? (
           <span className={`toast${toast.bad ? ' bad' : ''}`}>{toast.text}</span>
@@ -355,20 +431,6 @@ export function App(): ReactNode {
           <span className="hint">
             Back <kbd>⎋</kbd>
           </span>
-        )}
-        {screen.kind !== 'settings' && (
-          <button
-            type="button"
-            className="gear"
-            title="Settings (⌘,)"
-            aria-label="Settings"
-            // The search field owns the keyboard; letting the button take focus
-            // would send the palette's own keys nowhere.
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => ctx.go({ kind: 'settings' })}
-          >
-            <GearGlyph />
-          </button>
         )}
       </div>
     </div>
@@ -422,25 +484,17 @@ function SearchGlyph(): ReactNode {
   );
 }
 
-/* Six teeth, not eight: at 14px the extra pair closes the gaps and the whole
-   thing reads as a cog-shaped blob. Geometry is a stroked outline at
-   r=7 (tips) / 4.8 (roots), so it stays a gear at any size. */
-function GearGlyph(): ReactNode {
+/* Three bars rather than a gear: the button behind it is the whole app now —
+   settings, links and quitting — and a cog would promise only the first. */
+function MenuGlyph(): ReactNode {
   return (
     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
       <path
-        d="M 6.20 3.55 L 6.31 1.21 A 7 7 0 0 1 9.69 1.21 L 9.80 3.55 A 4.8 4.8 0 0 1 10.96 4.22
-           L 13.04 3.14 A 7 7 0 0 1 14.73 6.07 L 12.75 7.33 A 4.8 4.8 0 0 1 12.75 8.67
-           L 14.73 9.93 A 7 7 0 0 1 13.04 12.86 L 10.96 11.78 A 4.8 4.8 0 0 1 9.80 12.45
-           L 9.69 14.79 A 7 7 0 0 1 6.31 14.79 L 6.20 12.45 A 4.8 4.8 0 0 1 5.04 11.78
-           L 2.96 12.86 A 7 7 0 0 1 1.27 9.93 L 3.25 8.67 A 4.8 4.8 0 0 1 3.25 7.33
-           L 1.27 6.07 A 7 7 0 0 1 2.96 3.14 L 5.04 4.22 A 4.8 4.8 0 0 1 6.20 3.55 Z"
+        d="M2.5 4.5 H13.5 M2.5 8 H13.5 M2.5 11.5 H13.5"
         stroke="currentColor"
-        strokeWidth="1.3"
-        strokeLinejoin="round"
+        strokeWidth="1.5"
         strokeLinecap="round"
       />
-      <circle cx="8" cy="8" r="2.4" stroke="currentColor" strokeWidth="1.3" />
     </svg>
   );
 }

@@ -28,6 +28,20 @@ export function registerIpc(): void {
     hidePanel();
     return shell.openExternal(data.issueUrl(key));
   });
+  ipcMain.handle('openUrl', (_e, url: string) => {
+    // Only the palette's own links come through here, but openExternal hands
+    // whatever it is given to the OS — so a non-web scheme must not reach it.
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return;
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return;
+    hidePanel();
+    return shell.openExternal(parsed.href);
+  });
+
   ipcMain.handle('copy', (_e, text: string) => clipboard.writeText(text));
 
   ipcMain.handle('saveConfig', (_e, patch: Partial<JiraConfig>) => data.saveConfigPatch(patch));

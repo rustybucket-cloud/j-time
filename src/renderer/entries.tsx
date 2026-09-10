@@ -334,20 +334,65 @@ export function issueEntries(ctx: Ctx): Entry[] {
 }
 
 /** The commands that aren't about one story. Always last, so they never crowd the board. */
+/**
+ * The app itself, rather than any story: what the footer button opens.
+ *
+ * Kept as `Entry` values like everything else, so the same list component draws
+ * it — and so `commandEntries` can hand the same rows to the search field
+ * instead of defining a second copy that drifts.
+ */
+export function appMenuEntries(ctx: Ctx): Entry[] {
+  const { snapshot } = ctx;
+  const baseUrl = snapshot.config.baseUrl.trim();
+
+  return [
+    {
+      id: 'app:settings',
+      title: 'Settings…',
+      subtitle: 'JIRA connection, activities, hotkey',
+      keywords: ['config', 'preferences', 'token', 'jira'],
+      section: 'j-time',
+      accessories: <kbd>⌘,</kbd>,
+      run: () => ctx.go({ kind: 'settings' }),
+    },
+    {
+      id: 'app:refresh',
+      title: 'Refresh board',
+      keywords: ['reload', 'fetch'],
+      section: 'j-time',
+      accessories: <kbd>⌘R</kbd>,
+      run: () => ctx.actStay(() => window.jt.refresh()),
+    },
+    ...(baseUrl
+      ? [
+          {
+            id: 'app:jira',
+            title: 'Open JIRA in browser',
+            subtitle: baseUrl,
+            keywords: ['web', 'browser', 'site'],
+            section: 'j-time',
+            run: () => void window.jt.openUrl(baseUrl),
+          },
+        ]
+      : []),
+    {
+      id: 'app:quit',
+      title: 'Quit j-time',
+      subtitle: 'Stops the menu bar clock. Tracked time is already saved.',
+      keywords: ['exit', 'close'],
+      section: 'j-time',
+      accessories: <kbd>⌘Q</kbd>,
+      run: () => void window.jt.quit(),
+    },
+  ];
+}
+
 export function commandEntries(ctx: Ctx): Entry[] {
   const { snapshot } = ctx;
   const boardName =
     snapshot.boards.find((b) => b.id === snapshot.config.boardId)?.name ?? 'All my boards';
 
   return [
-    {
-      id: 'cmd:refresh',
-      title: 'Refresh board',
-      keywords: ['reload', 'fetch'],
-      section: 'Commands',
-      accessories: <kbd>⌘R</kbd>,
-      run: () => ctx.actStay(() => window.jt.refresh()),
-    },
     {
       id: 'cmd:board',
       title: 'Switch board…',
@@ -383,21 +428,7 @@ export function commandEntries(ctx: Ctx): Entry[] {
       section: 'Commands',
       run: () => ctx.actStay(() => window.jt.saveConfig({ mineOnly: !snapshot.config.mineOnly })),
     },
-    {
-      id: 'cmd:settings',
-      title: 'Settings…',
-      keywords: ['config', 'preferences', 'token', 'jira'],
-      section: 'Commands',
-      accessories: <kbd>⌘,</kbd>,
-      run: () => ctx.go({ kind: 'settings' }),
-    },
-    {
-      id: 'cmd:quit',
-      title: 'Quit j-time',
-      section: 'Commands',
-      accessories: <kbd>⌘Q</kbd>,
-      run: () => void window.jt.quit(),
-    },
+    ...appMenuEntries(ctx).map((entry) => ({ ...entry, section: 'Commands' })),
   ];
 }
 

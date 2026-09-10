@@ -48,6 +48,8 @@ export interface Bridge {
 
   getTransitions(key: string): Promise<{ ok: true; transitions: JiraTransition[] } | { ok: false; error: string }>;
   openIssue(key: string): Promise<void>;
+  /** Any http(s) link the app built — the JIRA home page, say. */
+  openUrl(url: string): Promise<void>;
   copy(text: string): Promise<void>;
 
   saveConfig(patch: Partial<JiraConfig>): Promise<ActionResult>;
