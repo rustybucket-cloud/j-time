@@ -6,9 +6,11 @@ import {
   unauthorizedOrgs,
   MINE,
   NEEDS_REVIEW,
+  parsePullUrl,
   pinnedPull,
   prBadges,
   prGlyph,
+  pullsUrl,
   type PullRequest,
 } from './prs';
 
@@ -226,5 +228,47 @@ describe('ssoAuthorizeUrl', () => {
 
   it('falls back to github.com rather than building a broken link', () => {
     expect(ssoAuthorizeUrl('not a url', 'x')).toBe('https://github.com/orgs/x/sso');
+  });
+});
+
+describe('parsePullUrl', () => {
+  // Keying on the URL shape is what keeps the scrape working across GitHub's
+  // restyles: the markup around a pull request changes, this path doesn't.
+  it('reads owner, repo and number from a relative link', () => {
+    expect(parsePullUrl('/fs-eng/oralgen-api/pull/412')).toEqual({
+      repo: 'fs-eng/oralgen-api',
+      number: 412,
+    });
+  });
+
+  it('reads an absolute link too', () => {
+    expect(parsePullUrl('https://github.com/o/r/pull/7')).toEqual({ repo: 'o/r', number: 7 });
+  });
+
+  it('tolerates a trailing path, query or fragment', () => {
+    expect(parsePullUrl('/o/r/pull/7/files')?.number).toBe(7);
+    expect(parsePullUrl('/o/r/pull/7?diff=split')?.number).toBe(7);
+    expect(parsePullUrl('/o/r/pull/7#issuecomment-1')?.number).toBe(7);
+  });
+
+  // The dashboard is full of links that are not pull requests.
+  it('rejects anything else on the page', () => {
+    expect(parsePullUrl('/o/r/issues/7')).toBeNull();
+    expect(parsePullUrl('/pulls')).toBeNull();
+    expect(parsePullUrl('/o/r/pull/notanumber')).toBeNull();
+    expect(parsePullUrl('')).toBeNull();
+  });
+});
+
+describe('pullsUrl', () => {
+  it('builds a dashboard search for a host', () => {
+    expect(pullsUrl('https://github.com', 'is:open is:pr')).toBe(
+      'https://github.com/pulls?q=is%3Aopen%20is%3Apr',
+    );
+  });
+
+  it('tolerates a trailing slash and an empty host', () => {
+    expect(pullsUrl('https://git.example.com/', 'x')).toBe('https://git.example.com/pulls?q=x');
+    expect(pullsUrl('', 'x')).toBe('https://github.com/pulls?q=x');
   });
 });

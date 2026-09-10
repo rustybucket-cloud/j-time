@@ -88,8 +88,16 @@ their own. Add as many as you have.
   **Configure SSO → Authorize** on the token, or its pull requests are withheld
   with no error.
 
+- **Browser sign-in**, for an org that no token can reach — some enforce SAML
+  SSO and authorise no token you're able to make. Sign in once through the real
+  GitHub login (SSO and two-factor included) and j-time reads the same
+  dashboard pages you would. It shows fewer badges, since review decisions and
+  check results aren't reliably on those pages, and it keeps a full GitHub
+  session on your machine, so sign out when you're done with it.
+
 The API root defaults to `https://api.github.com`; point it at
-`https://your-company.com/api` for GitHub Enterprise.
+`https://your-company.com/api` for GitHub Enterprise. A browser account takes
+the site you'd visit instead — `https://github.com`.
 
 Both tokens are stored encrypted with Electron's safeStorage.
 

@@ -102,10 +102,86 @@ const WORK = [
   }),
 ];
 
+/**
+ * A pretend /pulls dashboard, for the browser-session account.
+ *
+ * Shaped like GitHub's: a row per pull request, the link carrying
+ * /{owner}/{repo}/pull/{number}, a <relative-time datetime> for when, and the
+ * "opened … by someone" line the author is read out of. Deliberately wrapped in
+ * unrelated markup and padded with links that are *not* pull requests — the
+ * extractor has to pick these out of a real page, so it should have to here.
+ *
+ * MOCK_GH_REQUIRE_LOGIN=1 makes it redirect to /login instead, which is the
+ * expired-session path.
+ */
+const REQUIRE_LOGIN = process.env.MOCK_GH_REQUIRE_LOGIN === '1';
+
+const DASHBOARD = {
+  'is:open is:pr author:@me archived:false': [
+    { repo: 'org-work/api', number: 7, title: 'Paginate the exports endpoint', by: 'dana', ago: 45 },
+    { repo: 'org-work/api', number: 9, title: 'Drop the v1 serialiser', by: 'dana', ago: 300, draft: true },
+  ],
+  'is:open is:pr review-requested:@me archived:false': [
+    { repo: 'org-work/web', number: 88, title: 'Cache the pedigree lookup', by: 'amir', ago: 2880 },
+  ],
+};
+
+const row = (pr) => `
+  <div id="issue_${pr.number}" class="js-issue-row Box-row">
+    <div class="flex-auto">
+      <a id="issue_${pr.number}_link" class="Link--primary markdown-title"
+         href="/${pr.repo}/pull/${pr.number}">${pr.title}</a>
+      ${pr.draft ? '<span class="State">Draft</span>' : ''}
+      <div class="mt-1 text-small color-fg-muted">
+        <span class="opened-by">#${pr.number} opened
+          <relative-time datetime="${new Date(now - pr.ago * MINUTE).toISOString()}">then</relative-time>
+          by <a class="Link--muted" href="/${pr.by}">${pr.by}</a>
+        </span>
+      </div>
+    </div>
+  </div>`;
+
+const dashboardHtml = (query) => {
+  const prs = DASHBOARD[query] ?? [];
+  return `<!doctype html><html><head><title>Pull requests</title></head><body>
+    <header><a href="/notifications">Notifications</a><a href="/pulls">Pull requests</a></header>
+    <div class="Box">${prs.map(row).join('')}</div>
+    <a href="/org-work/api/issues/3">An issue, which is not a pull request</a>
+    <footer><a href="/about">About</a></footer>
+  </body></html>`;
+};
+
 const server = createServer((req, res) => {
   let body = '';
   req.on('data', (chunk) => (body += chunk));
   req.on('end', () => {
+    const url = new URL(req.url, 'http://localhost');
+
+    if (url.pathname === '/pulls') {
+      const signedIn = /user_session=/.test(req.headers.cookie ?? '');
+      if (REQUIRE_LOGIN && !signedIn) {
+        console.log('pulls → /login (no session)');
+        res.writeHead(302, { location: '/login' }).end();
+        return;
+      }
+      const query = url.searchParams.get('q') ?? '';
+      console.log('pulls', JSON.stringify(query));
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      res.end(dashboardHtml(query));
+      return;
+    }
+
+    if (url.pathname === '/login') {
+      console.log('login');
+      res.writeHead(200, {
+        'content-type': 'text/html; charset=utf-8',
+        // A real login sets these once SSO is done; here the button stands in.
+        'set-cookie': ['user_session=mock; Path=/', 'dotcom_user=dana; Path=/'],
+      });
+      res.end('<!doctype html><title>Sign in</title><h1>Mock GitHub sign-in</h1>');
+      return;
+    }
+
     if (!/^Bearer .+/.test(req.headers.authorization ?? '')) {
       json(res, 401, { message: 'Bad credentials' });
       return;

@@ -22,7 +22,9 @@ import {
 } from '@shared/github';
 import type { PullRequest } from '@shared/prs';
 import type { MainPlugin } from '../../plugin';
-import { createGithub } from './client';
+import { str } from '../../plugin';
+import { createGithub, type GithubResult } from './client';
+import { getPullsViaBrowser, NeedsSignIn, signIn, signOut } from './browser';
 
 /** PRs move on other people's schedules, so a slower poll than the board's. */
 const POLL_MS = 180_000;
@@ -81,7 +83,7 @@ export const plugin: MainPlugin<GithubSnapshot, GithubConfig> = {
     };
   },
 
-  configured: () => config.accounts.some((a) => Boolean(a.token)),
+  configured: () => config.accounts.some((a) => Boolean(a.token) || a.kind === 'browser'),
 
   snapshot: () => ({ config: publicConfig(), pulls, accounts }),
 
@@ -93,11 +95,15 @@ export const plugin: MainPlugin<GithubSnapshot, GithubConfig> = {
    * and reports on its own row, the same bargain the shell makes per section.
    */
   async refresh(): Promise<ActionResult> {
-    const usable = config.accounts.filter((a) => a.token);
-    if (usable.length === 0) return { ok: false, error: 'No GitHub token yet' };
+    const usable = config.accounts.filter((a) => a.token || a.kind === 'browser');
+    if (usable.length === 0) return { ok: false, error: 'No GitHub account yet' };
 
     const settled = await Promise.allSettled(
-      usable.map((account) => createGithub(account, config.limit).getPulls()),
+      usable.map((account): Promise<GithubResult> =>
+        account.kind === 'browser'
+          ? getPullsViaBrowser(account)
+          : createGithub(account, config.limit).getPulls(),
+      ),
     );
 
     const merged: PullRequest[] = [];
@@ -108,12 +114,17 @@ export const plugin: MainPlugin<GithubSnapshot, GithubConfig> = {
       if (result.status === 'rejected') {
         // Keep whatever this account last showed; only its status changes.
         merged.push(...pulls.filter((pr) => pr.account === account.id));
+        // A dead session isn't an error to report, it's a thing to do — the row
+        // it produces offers the sign-in rather than the message.
+        const needsSignIn = result.reason instanceof NeedsSignIn;
         statuses.push({
           id: account.id,
           label: accountName(account),
+          kind: account.kind,
           login: null,
-          error: message(result.reason),
+          error: needsSignIn ? null : message(result.reason),
           blockedOrgs: [],
+          needsSignIn,
         });
         return;
       }
@@ -122,9 +133,11 @@ export const plugin: MainPlugin<GithubSnapshot, GithubConfig> = {
       statuses.push({
         id: account.id,
         label: accountName(account, login),
+        kind: account.kind,
         login,
         error: null,
         blockedOrgs,
+        needsSignIn: false,
       });
     });
 
@@ -132,13 +145,38 @@ export const plugin: MainPlugin<GithubSnapshot, GithubConfig> = {
     accounts = statuses;
 
     // The section is only *failed* when nothing came back at all. One account
-    // down out of three is a row, not a dead list.
+    // down out of three is a row, not a dead list — and an account merely
+    // waiting to be signed into is a row too, never a failure.
     const failed = statuses.filter((s) => s.error);
-    if (failed.length === statuses.length) {
+    if (failed.length > 0 && failed.length === statuses.length) {
       return { ok: false, error: failed[0]?.error ?? 'GitHub is unreachable' };
     }
     return { ok: true };
   },
 
-  commands: {},
+  commands: {
+    /**
+     * Sign a browser account in, then re-read it.
+     *
+     * A visible window, because a human has to complete SSO and two-factor
+     * exactly as they would in their own browser — that being the entire reason
+     * this mode exists.
+     */
+    async signIn(args) {
+      const id = str(args, 0);
+      const account = config.accounts.find((a) => a.id === id);
+      if (!account) return { ok: false, error: `No account called ${id}` };
+      await signIn(account);
+      return { ok: true, message: `Signed in to ${accountName(account)}` };
+    },
+
+    async signOut(args) {
+      const id = str(args, 0);
+      const account = config.accounts.find((a) => a.id === id);
+      if (!account) return { ok: false, error: `No account called ${id}` };
+      await signOut(account);
+      pulls = pulls.filter((pr) => pr.account !== id);
+      return { ok: true, message: `Signed out of ${accountName(account)}` };
+    },
+  },
 };

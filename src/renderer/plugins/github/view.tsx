@@ -58,7 +58,7 @@ function actions(item: PrItem, ctx: Ctx): Row[] {
  * missing from this list" cannot be something you have to notice the absence
  * of. Both disappear on their own once the cause is fixed.
  */
-function problemRows(snapshot: GithubSnapshot): Row[] {
+function problemRows(snapshot: GithubSnapshot, ctx: Ctx): Row[] {
   const hostFor = (id: string) =>
     snapshot.config.accounts.find((a) => a.id === id)?.host ?? '';
   const many = snapshot.accounts.length > 1;
@@ -66,6 +66,22 @@ function problemRows(snapshot: GithubSnapshot): Row[] {
 
   for (const account of snapshot.accounts) {
     const who = many ? `${account.label}: ` : '';
+    // A dead session is a thing to do, not an error to read — so it offers the
+    // sign-in rather than telling you about it.
+    if (account.needsSignIn) {
+      rows.push({
+        id: `signin:${account.id}`,
+        title: `Sign in to GitHub${many ? ` as ${account.label}` : ''}`,
+        subtitle: 'Its pull requests are missing until you do. ↩ opens the real login.',
+        keywords: ['sign in', 'login', 'session', 'browser', account.label],
+        subsection: 'Not connected',
+        lead: 'attention',
+        enterLabel: 'Sign in',
+        run: () =>
+          ctx.actStay(() => window.jt.invoke('github', 'signIn', [account.id])),
+      });
+      continue;
+    }
     if (account.error) {
       rows.push({
         id: `err:${account.id}`,
@@ -114,7 +130,7 @@ export const githubView: PluginView<GithubSnapshot> = {
       snapshot.accounts.find((a) => a.id === id)?.label ?? '';
 
     const rows: Row[] = [
-      ...problemRows(snapshot),
+      ...problemRows(snapshot, ctx),
       ...items.map((item) => ({
         id: item.id,
         title: item.title,

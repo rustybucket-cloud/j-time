@@ -41,7 +41,8 @@ cat > "$SANDBOX/config.json" <<JSON
     "github": {
       "accounts": [
         { "id": "a1", "label": "Personal", "host": "http://localhost:$GH_PORT", "token": "sandbox-token" },
-        { "id": "a2", "label": "Work", "host": "http://localhost:$GH_PORT", "token": "sandbox-work-token" }
+        { "id": "a2", "label": "Work", "host": "http://localhost:$GH_PORT", "token": "sandbox-work-token" },
+        { "id": "a3", "label": "Browser", "kind": "browser", "host": "http://localhost:$GH_PORT", "token": "" }
       ],
       "limit": 25
     }

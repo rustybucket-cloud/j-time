@@ -179,6 +179,42 @@ export function ssoAuthorizeUrl(apiHost: string, org: string): string {
   return `${web}/orgs/${encodeURIComponent(org)}/sso`;
 }
 
+/**
+ * The dashboard pages a browser account reads.
+ *
+ * The same two questions the API asks, asked of GitHub's own UI: what you have
+ * open, and what is waiting on you. Deliberately the `q=` form rather than the
+ * `/pulls/review-requested` shortcut, so both lists are built the same way and
+ * the filters stay visible here rather than being implied by a path.
+ */
+export const PULLS_QUERIES = {
+  mine: 'is:open is:pr author:@me archived:false',
+  review: 'is:open is:pr review-requested:@me archived:false',
+} as const;
+
+export function pullsUrl(webHost: string, query: string): string {
+  const base = webHost.trim().replace(/\/+$/, '') || 'https://github.com';
+  return `${base}/pulls?q=${encodeURIComponent(query)}`;
+}
+
+/**
+ * Pull `owner/repo` and a number out of a pull request link.
+ *
+ * Keying on the URL shape rather than on class names is the whole trick to
+ * scraping this page without it breaking every time GitHub restyles: the markup
+ * around a pull request changes, `/{owner}/{repo}/pull/{number}` does not.
+ * Returns null for the many other links on the page.
+ */
+export function parsePullUrl(href: string): { repo: string; number: number } | null {
+  const match = /^(?:https?:\/\/[^/]+)?\/([^/\s]+)\/([^/\s]+)\/pull\/(\d+)(?:[/?#]|$)/.exec(
+    href.trim(),
+  );
+  if (!match) return null;
+  const number = Number(match[3]);
+  if (!Number.isFinite(number) || number <= 0) return null;
+  return { repo: `${match[1]}/${match[2]}`, number };
+}
+
 /** A coarse "how long ago", to one unit. Precision past that is not information. */
 export function formatAge(ms: number): string {
   const minutes = Math.max(0, Math.floor(ms / 60_000));

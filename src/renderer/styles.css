@@ -764,3 +764,30 @@ kbd {
 .note.bad {
   color: var(--danger);
 }
+
+.kinds {
+  display: flex;
+  gap: 14px;
+  margin-bottom: 10px;
+}
+
+.signin {
+  display: flex;
+  gap: 8px;
+}
+
+.signin button {
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--dim);
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 12px;
+  cursor: default;
+}
+
+.signin button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}

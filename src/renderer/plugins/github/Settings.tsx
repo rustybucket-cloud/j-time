@@ -1,5 +1,11 @@
 import { useState, type ReactNode } from 'react';
-import { GITHUB_HOST, type GithubAccount, type GithubSnapshot } from '@shared/github';
+import {
+  GITHUB_HOST,
+  GITHUB_WEB,
+  type GithubAccount,
+  type GithubAuth,
+  type GithubSnapshot,
+} from '@shared/github';
 
 /**
  * Where the GitHub tokens live — one row per account.
@@ -44,6 +50,7 @@ export function Settings({
         // that keeps a stored token matches on exactly that.
         id: `a${Date.now().toString(36)}`,
         label: '',
+        kind: 'token',
         host: GITHUB_HOST,
         token: '',
         hasToken: false,
@@ -51,6 +58,10 @@ export function Settings({
     ]);
 
   const remove = (id: string) => setAccounts((list) => list.filter((a) => a.id !== id));
+
+  /** Switching how an account signs in also switches what its host means. */
+  const setKind = (id: string, kind: GithubAuth) =>
+    update(id, { kind, host: kind === 'browser' ? GITHUB_WEB : GITHUB_HOST, token: '' });
 
   async function save(): Promise<void> {
     setSaving(true);
@@ -84,8 +95,9 @@ export function Settings({
       }}
     >
       <div className="banner">
-        One account per token. A fine-grained token only ever speaks for one owner,
-        so a work org needs its own alongside your personal one.
+        One account per credential. A fine-grained token only ever speaks for one owner,
+        so a work org needs its own alongside your personal one — and where no token can
+        reach an org at all, browser sign-in reads the same pages you would.
       </div>
 
       {accounts.map((account) => {
@@ -105,6 +117,27 @@ export function Settings({
               </button>
             </div>
 
+            <div className="kinds">
+              <label className="check">
+                <input
+                  type="radio"
+                  name={`kind-${account.id}`}
+                  checked={account.kind === 'token'}
+                  onChange={() => setKind(account.id, 'token')}
+                />
+                Token
+              </label>
+              <label className="check">
+                <input
+                  type="radio"
+                  name={`kind-${account.id}`}
+                  checked={account.kind === 'browser'}
+                  onChange={() => setKind(account.id, 'browser')}
+                />
+                Browser sign-in
+              </label>
+            </div>
+
             {state?.error && <div className="note bad">{state.error}</div>}
             {state?.blockedOrgs.map((org) => (
               <div key={org} className="note bad">
@@ -112,30 +145,58 @@ export function Settings({
               </div>
             ))}
 
-            <div className="field">
-              <label>Token</label>
-              <input
-                type="password"
-                value={account.token}
-                placeholder={
-                  account.hasToken ? '•••••••• stored — type to replace' : 'github_pat_… or ghp_…'
-                }
-                onChange={(e) => update(account.id, { token: e.target.value })}
-              />
-              <div className="note">
-                Fine-grained: <code>Pull requests: Read</code> and{' '}
-                <code>Metadata: Read</code> on the repositories you pick. Classic:{' '}
-                <code>repo</code> and <code>read:org</code>, plus{' '}
-                <strong>Configure SSO → Authorize</strong> for any org that enforces it.
+            {account.kind === 'token' ? (
+              <div className="field">
+                <label>Token</label>
+                <input
+                  type="password"
+                  value={account.token}
+                  placeholder={
+                    account.hasToken ? '•••••••• stored — type to replace' : 'github_pat_… or ghp_…'
+                  }
+                  onChange={(e) => update(account.id, { token: e.target.value })}
+                />
+                <div className="note">
+                  Fine-grained: <code>Pull requests: Read</code> and{' '}
+                  <code>Metadata: Read</code> on the repositories you pick. Classic:{' '}
+                  <code>repo</code> and <code>read:org</code>, plus{' '}
+                  <strong>Configure SSO → Authorize</strong> for any org that enforces it.
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="field">
+                <label>Session</label>
+                <div className="signin">
+                  <button
+                    type="button"
+                    onClick={() => void window.jt.invoke('github', 'signIn', [account.id])}
+                  >
+                    {state?.needsSignIn === false && state.login
+                      ? `Signed in as ${state.login} — sign in again`
+                      : 'Sign in to GitHub…'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void window.jt.invoke('github', 'signOut', [account.id])}
+                  >
+                    Sign out
+                  </button>
+                </div>
+                <div className="note">
+                  Opens the real GitHub login, so SSO and two-factor work exactly as they do
+                  in your browser. Save first if you’ve just changed the host. The session is
+                  kept for this account alone and never leaves your machine — it is a broader
+                  credential than a token, so sign out when you’re done with it.
+                </div>
+              </div>
+            )}
 
             <div className="field">
-              <label>API root</label>
+              <label>{account.kind === 'browser' ? 'Site' : 'API root'}</label>
               <input
                 type="text"
                 value={account.host}
-                placeholder={GITHUB_HOST}
+                placeholder={account.kind === 'browser' ? GITHUB_WEB : GITHUB_HOST}
                 onChange={(e) => update(account.id, { host: e.target.value })}
               />
             </div>

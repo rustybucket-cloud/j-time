@@ -283,6 +283,35 @@ another's host the first time somebody reorders the list. Accounts fail
 independently: `allSettled`, a row per broken one, and the section only counts
 as failed when every account is.
 
+**Browser sign-in is the fallback when no token can reach an org.** An org can
+enforce SAML SSO *and* leave no token type it will authorise, at which point
+the API shows nothing and says nothing. A signed-in session still works,
+because it's the one you use yourself. `kind: 'browser'` on an account swaps
+the fetch for `browser.ts`, which reads the same two dashboard pages you would
+— everything downstream (rows, pinning, ranking, badges) is unchanged.
+
+Four things about it, all load-bearing:
+
+- **No new dependency.** j-time is already Electron. A hidden `BrowserWindow`
+  on `persist:github-<accountId>` is the whole mechanism — no Playwright, no
+  Chromium download, and the partition lands under `userData`, which `JT_HOME`
+  already redirects.
+- **The extractor keys on the URL shape, not on class names.** The markup
+  around a pull request is restyled constantly; `/{owner}/{repo}/pull/{number}`
+  is not. `parsePullUrl` is where that lives, and it's tested.
+- **What can't be read reliably is left out.** Review decisions and check
+  rollups aren't on the dashboard in any trustworthy form, so a browser account
+  produces rows without those badges rather than ones guessed from an icon's
+  class name — a wrong badge is worse than a missing one.
+- **An empty read and an unreadable page look identical**, so `getPullsViaBrowser`
+  refuses to report "nothing open" unless the page actually said so. Silence
+  from a scraper has to be distrusted; that's the whole reason this failure
+  mode was worth building around in the first place.
+
+The session is a broader credential than a token — it is a whole GitHub login
+sitting in `userData`. `signOut` clears it, and Settings offers that next to
+sign-in.
+
 **An org enforcing SAML SSO withholds results silently.** REST answers 403 with
 an `X-GitHub-SSO` header, which is easy. GraphQL *search* does not: it returns
 HTTP 200, no header, and simply fewer pull requests — so an unauthorised token
