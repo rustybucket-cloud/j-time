@@ -299,10 +299,20 @@ Four things about it, all load-bearing:
   `webHostFor` folds either kind back to the one a browser wants. Settings also
   saves before signing in, because the main process signs into the *stored*
   account and a button that used the pre-edit host was the actual bug.
-- **No new dependency.** j-time is already Electron. A hidden `BrowserWindow`
-  on `persist:github-<accountId>` is the whole mechanism — no Playwright, no
-  Chromium download, and the partition lands under `userData`, which `JT_HOME`
-  already redirects.
+- **Playwright drives it, against the Chrome you already have.** The reason is
+  the render wait: `waitForSelector` is a real answer to "wait until the rows
+  exist", where the hand-rolled `MutationObserver` this started as was a guess
+  that usually worked. `launchPersistentContext` keeps the session in
+  `$DIR/browser/<accountId>`, so `JT_HOME` redirects it with everything else
+  and a sandbox run can't touch a real login.
+- **`channel: 'chrome'` first, bundled Chromium second, Edge third.**
+  Playwright's own Chromium is a ~150MB download a packaged app has no good way
+  to fetch and a corporate network may refuse; installed Chrome is already
+  there, already updated by somebody else, and being a real branded browser is
+  the one GitHub is least likely to treat as a robot. Nothing ships a browser.
+- **A persistent context locks its profile directory**, so two of them for one
+  account is an error rather than a race — every operation on an account goes
+  through `serial()`, sign-in included.
 - **The extractor keys on the URL shape, not on class names.** The markup
   around a pull request is restyled constantly; `/{owner}/{repo}/pull/{number}`
   is not. `parsePullUrl` is where that lives, and it's tested.
@@ -439,6 +449,9 @@ belongs in `shared/` next to `prs.ts`; only the mapping onto rows belongs in
 **For the UI itself, screenshot it.** A borderless always-on-top overlay can't be
 pointed at with a normal screenshot tool. `JT_CAPTURE=path.png` shows the panel,
 saves a picture and quits; `JT_CAPTURE_KEYS="cmd+k,Enter"` drives it there first.
+`JT_CAPTURE_DELAY=20000` waits longer before the shot — a browser account has
+to launch Chrome and wait for GitHub to render, and the default 1.8s catches
+the panel mid-fetch, which reads exactly like a truncated list.
 
 Two things about `sendInputEvent`, both established the hard way:
 

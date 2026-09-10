@@ -109,7 +109,10 @@ async function capture(file: string): Promise<void> {
   showPanel();
   const panel = getPanel();
   if (!panel) return app.quit();
-  await new Promise((r) => setTimeout(r, 1800));
+  // A browser account launches Chrome and waits for GitHub to render, which
+  // takes rather longer than a fetch — JT_CAPTURE_DELAY buys it the time.
+  const settle = Number(process.env.JT_CAPTURE_DELAY) || 1800;
+  await new Promise((r) => setTimeout(r, settle));
 
   // JT_CAPTURE_KEYS drives the palette first, so the screens you can only reach by
   // typing are reviewable too: "cmd+k" for the action list, "cmd+," for Settings.

@@ -91,9 +91,14 @@ their own. Add as many as you have.
 - **Browser sign-in**, for an org that no token can reach — some enforce SAML
   SSO and authorise no token you're able to make. Sign in once through the real
   GitHub login (SSO and two-factor included) and j-time reads the same
-  dashboard pages you would. It shows fewer badges, since review decisions and
-  check results aren't reliably on those pages, and it keeps a full GitHub
-  session on your machine, so sign out when you're done with it.
+  dashboard pages you would, in a headless Chrome. It shows fewer badges, since
+  review decisions and check results aren't reliably on those pages, and it
+  keeps a full GitHub session on your machine, so sign out when you're done
+  with it.
+
+  It drives **Google Chrome** if you have it, which almost everyone does and
+  which avoids downloading a second browser. Without Chrome, run
+  `npx playwright install chromium` once.
 
 The API root defaults to `https://api.github.com`; point it at
 `https://your-company.com/api` for GitHub Enterprise. A browser account takes
