@@ -306,6 +306,18 @@ Four things about it, all load-bearing:
 - **The extractor keys on the URL shape, not on class names.** The markup
   around a pull request is restyled constantly; `/{owner}/{repo}/pull/{number}`
   is not. `parsePullUrl` is where that lives, and it's tested.
+- **The rows are rendered in the browser, so the read has to wait for them.**
+  GitHub's pull request lists come back as a React shell — curl one and there
+  are no `/pull/` links in the HTML at all — so reading when `loadURL` resolves
+  catches however much had hydrated, which is some of the list or none of it.
+  The in-page script waits on a `MutationObserver` until rows exist or the page
+  says it has none, and a wait that times out is reported as a failure rather
+  than as an empty list. `scripts/mock-github.mjs` renders its rows from a
+  script for exactly this reason: a mock that served them in the HTML would
+  pass while the real thing raced.
+- **And the dashboard paginates**, at 25. `readList` follows `rel="next"` up to
+  `MAX_PAGES`; the mock paginates at two so a truncated read shows up as a
+  missing row.
 - **What can't be read reliably is left out.** Review decisions and check
   rollups aren't on the dashboard in any trustworthy form, so a browser account
   produces rows without those badges rather than ones guessed from an icon's

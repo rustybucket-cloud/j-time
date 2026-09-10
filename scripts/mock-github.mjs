@@ -111,15 +111,25 @@ const WORK = [
  * unrelated markup and padded with links that are *not* pull requests — the
  * extractor has to pick these out of a real page, so it should have to here.
  *
+ * And, like GitHub's, the rows are **rendered in the browser** rather than
+ * served in the HTML, after a delay. Reading the page the moment it loads is
+ * therefore a race, which is the bug this mock exists to keep caught. It
+ * paginates at two rows for the same reason.
+ *
  * MOCK_GH_REQUIRE_LOGIN=1 makes it redirect to /login instead, which is the
  * expired-session path.
  */
 const REQUIRE_LOGIN = process.env.MOCK_GH_REQUIRE_LOGIN === '1';
 
+const PAGE_SIZE = 2;
+const RENDER_DELAY_MS = 400;
+
 const DASHBOARD = {
   'is:open is:pr author:@me archived:false': [
     { repo: 'org-work/api', number: 7, title: 'Paginate the exports endpoint', by: 'dana', ago: 45 },
     { repo: 'org-work/api', number: 9, title: 'Drop the v1 serialiser', by: 'dana', ago: 300, draft: true },
+    // On page two, so a truncated read is visible as a missing row.
+    { repo: 'org-work/tools', number: 3, title: 'Vendor the schema fixtures', by: 'dana', ago: 5000 },
   ],
   'is:open is:pr review-requested:@me archived:false': [
     { repo: 'org-work/web', number: 88, title: 'Cache the pedigree lookup', by: 'amir', ago: 2880 },
@@ -141,13 +151,29 @@ const row = (pr) => `
     </div>
   </div>`;
 
-const dashboardHtml = (query) => {
-  const prs = DASHBOARD[query] ?? [];
+const dashboardHtml = (query, page) => {
+  const all = DASHBOARD[query] ?? [];
+  const prs = all.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const more = all.length > page * PAGE_SIZE;
+  const next = more
+    ? `<a rel="next" href="/pulls?q=${encodeURIComponent(query)}&page=${page + 1}">Next</a>`
+    : '';
+  const body = prs.length === 0 ? '<p>No results matched your search.</p>' : prs.map(row).join('');
+
+  // The rows arrive from a script, the way GitHub's do. The served HTML has no
+  // pull request links in it at all — check by curling this page.
   return `<!doctype html><html><head><title>Pull requests</title></head><body>
     <header><a href="/notifications">Notifications</a><a href="/pulls">Pull requests</a></header>
-    <div class="Box">${prs.map(row).join('')}</div>
+    <div id="react-app" data-target="react-app"></div>
     <a href="/org-work/api/issues/3">An issue, which is not a pull request</a>
     <footer><a href="/about">About</a></footer>
+    <script>
+      setTimeout(function () {
+        document.getElementById('react-app').innerHTML = ${JSON.stringify(
+          `<div class="Box">${body}</div>${next}`,
+        )};
+      }, ${RENDER_DELAY_MS});
+    </script>
   </body></html>`;
 };
 
@@ -165,9 +191,10 @@ const server = createServer((req, res) => {
         return;
       }
       const query = url.searchParams.get('q') ?? '';
-      console.log('pulls', JSON.stringify(query));
+      const page = Number(url.searchParams.get('page') ?? '1') || 1;
+      console.log('pulls', JSON.stringify(query), 'page', page);
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-      res.end(dashboardHtml(query));
+      res.end(dashboardHtml(query, page));
       return;
     }
 

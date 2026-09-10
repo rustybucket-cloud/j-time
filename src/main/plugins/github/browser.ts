@@ -15,6 +15,14 @@
  * `/{owner}/{repo}/pull/{number}` is not. What can't be read reliably —
  * review decisions, check rollups — is simply left out rather than guessed at
  * from an icon's class name.
+ *
+ * **The page renders its rows in the browser, not on the server.** GitHub's
+ * pull request lists come back as a React shell — the raw HTML holds no
+ * `/pull/` links at all — so a read taken when `loadURL` resolves catches
+ * however much had hydrated by then, which is some of the list, or none of it,
+ * depending on the day. Everything here therefore waits for the rows to exist
+ * before looking, and treats "still nothing" as a failure rather than as an
+ * empty inbox.
  */
 
 import { BrowserWindow, session, type Session } from 'electron';
@@ -25,6 +33,10 @@ import type { GithubResult } from './client';
 
 /** A page that hasn't answered by now isn't going to. */
 const LOAD_TIMEOUT_MS = 20_000;
+/** How long to let the client-side render finish once the shell has loaded. */
+const RENDER_TIMEOUT_MS = 12_000;
+/** The dashboard paginates; more than this is somebody else's problem. */
+const MAX_PAGES = 4;
 
 /** Raw rows as the page hands them over, before they mean anything. */
 interface ScrapedPull {
@@ -42,43 +54,89 @@ interface ScrapedPull {
  * of this process. Everything it returns is plain JSON.
  */
 const EXTRACT = `(() => {
-  const rows = [];
-  const seen = new Set();
-  for (const a of document.querySelectorAll('a[href*="/pull/"]')) {
-    const href = a.getAttribute('href') || '';
-    if (!/\\/pull\\/\\d+(?:[/?#]|$)/.test(href)) continue;
-    const title = (a.textContent || '').trim();
-    // Links with no words are the icons and counters beside the real one.
-    if (!title) continue;
-    if (seen.has(href)) continue;
-    seen.add(href);
+  /**
+   * Resolve once the list is on the page, then read it.
+   *
+   * The wait is the important half. These rows are rendered by React after the
+   * document has loaded, so checking once is a race — and losing it looks
+   * exactly like having no pull requests.
+   */
+  const EMPTY = /No results matched|no open pull requests|didn.t match any|0 Open/i;
 
-    // The row is whichever ancestor holds the metadata. Bounded so a page
-    // without the expected shape can't walk to <body> and scoop up everything.
-    let row = a;
-    for (let i = 0; i < 6 && row.parentElement; i++) {
-      row = row.parentElement;
-      if (row.querySelector('relative-time, time-ago, time')) break;
+  const scrape = () => {
+    const rows = [];
+    const seen = new Set();
+    for (const a of document.querySelectorAll('a[href*="/pull/"]')) {
+      const href = a.getAttribute('href') || '';
+      if (!/\\/pull\\/\\d+(?:[/?#]|$)/.test(href)) continue;
+      const title = (a.textContent || '').trim();
+      // Links with no words are the icons and counters beside the real one.
+      if (!title) continue;
+      if (seen.has(href)) continue;
+      seen.add(href);
+
+      // The row is whichever ancestor holds the metadata. Bounded so a page
+      // without the expected shape can't walk to <body> and scoop up everything.
+      let row = a;
+      for (let i = 0; i < 8 && row.parentElement; i++) {
+        row = row.parentElement;
+        if (row.querySelector('relative-time, time-ago, time')) break;
+      }
+      const when = row.querySelector('relative-time, time-ago, time');
+      const text = (row.textContent || '').replace(/\\s+/g, ' ');
+      const opened = /opened .* by ([A-Za-z0-9-]+)/.exec(text);
+
+      rows.push({
+        href,
+        title,
+        updatedAt: when ? when.getAttribute('datetime') : null,
+        draft: /\\bDraft\\b/.test(text),
+        author: opened ? opened[1] : null,
+      });
     }
-    const when = row.querySelector('relative-time, time-ago, time');
-    const text = (row.textContent || '').replace(/\\s+/g, ' ');
-    const opened = /opened .* by ([A-Za-z0-9-]+)/.exec(text);
+    return rows;
+  };
 
-    rows.push({
-      href,
-      title,
-      updatedAt: when ? when.getAttribute('datetime') : null,
-      draft: /\\bDraft\\b/.test(text),
-      author: opened ? opened[1] : null,
+  const isEmpty = () => EMPTY.test(document.body ? document.body.innerText : '');
+  const hasNext = () =>
+    Boolean(document.querySelector('a[rel="next"], a[aria-label="Next Page"], a[aria-label="Next"]'));
+
+  const answer = (timedOut) => ({
+    rows: scrape(),
+    empty: isEmpty(),
+    hasNext: hasNext(),
+    url: location.href,
+    timedOut: Boolean(timedOut),
+  });
+
+  return new Promise((resolve) => {
+    const ready = () => scrape().length > 0 || isEmpty();
+    if (ready()) return resolve(answer(false));
+
+    const observer = new MutationObserver(() => {
+      if (!ready()) return;
+      observer.disconnect();
+      clearTimeout(timer);
+      // One more tick: the first row to appear is rarely the last.
+      setTimeout(() => resolve(answer(false)), 250);
     });
-  }
-  return { rows, url: location.href, title: document.title };
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+
+    const timer = setTimeout(() => {
+      observer.disconnect();
+      resolve(answer(true));
+    }, ${RENDER_TIMEOUT_MS});
+  });
 })()`;
 
 interface PageResult {
   rows: ScrapedPull[];
+  /** The page said so itself — no results, rather than none read. */
+  empty: boolean;
+  hasNext: boolean;
   url: string;
-  title: string;
+  /** The rows never appeared. Not the same as there being none. */
+  timedOut: boolean;
 }
 
 /** One persistent session per account, so two logins can't tread on each other. */
@@ -101,7 +159,7 @@ function webHost(account: GithubAccount): string {
 /** GitHub sends you here when the session is gone. */
 const isLoginPage = (url: string): boolean => /\/login|\/session|\/sessions\//.test(url);
 
-async function read(account: GithubAccount, url: string): Promise<PageResult> {
+async function read_(account: GithubAccount, url: string): Promise<PageResult> {
   const window = new BrowserWindow({
     show: false,
     webPreferences: {
@@ -166,6 +224,37 @@ function toPull(
   };
 }
 
+interface ListResult {
+  rows: ScrapedPull[];
+  /** Every page either yielded rows or said it had none. */
+  read: boolean;
+}
+
+/**
+ * One dashboard list, following its pages.
+ *
+ * The dashboard shows 25 at a time, so a list longer than that used to arrive
+ * truncated with nothing to say it had been. Stops as soon as a page reports no
+ * next link, which is also what a single-page list reports.
+ */
+async function readList(account: GithubAccount, host: string, query: string): Promise<ListResult> {
+  const rows: ScrapedPull[] = [];
+  let read = true;
+
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const url = `${pullsUrl(host, query)}${page > 1 ? `&page=${page}` : ''}`;
+    const result = await read_(account, url);
+    if (isLoginPage(result.url)) throw new NeedsSignIn();
+
+    rows.push(...result.rows);
+    // Rows that never rendered are not an empty list; remember the difference.
+    if (result.timedOut && result.rows.length === 0 && !result.empty) read = false;
+    if (!result.hasNext || result.rows.length === 0) break;
+  }
+
+  return { rows, read };
+}
+
 /**
  * Both dashboard lists, as pull requests.
  *
@@ -174,11 +263,8 @@ function toPull(
  */
 export async function getPullsViaBrowser(account: GithubAccount): Promise<GithubResult> {
   const host = webHost(account);
-  const mine = await read(account, pullsUrl(host, PULLS_QUERIES.mine));
-  if (isLoginPage(mine.url)) throw new NeedsSignIn();
-
-  const review = await read(account, pullsUrl(host, PULLS_QUERIES.review));
-  if (isLoginPage(review.url)) throw new NeedsSignIn();
+  const mine = await readList(account, host, PULLS_QUERIES.mine);
+  const review = await readList(account, host, PULLS_QUERIES.review);
 
   const login = await signedInAs(account);
   const pulls = [
@@ -186,21 +272,14 @@ export async function getPullsViaBrowser(account: GithubAccount): Promise<Github
     ...mine.rows.map((r) => toPull(r, host, login, false)),
   ].filter((pr): pr is PullRequest => pr !== null);
 
-  // A page that loaded, wasn't the login screen, and yielded nothing is either
-  // an empty dashboard or a dashboard we can no longer read. Those look
-  // identical from here, so say so rather than reporting "nothing open".
-  if (pulls.length === 0 && !looksEmpty(mine) && !looksEmpty(review)) {
-    throw new Error('Signed in, but couldn’t read the pull request list');
+  // A list whose rows never rendered is not an empty list, and reporting it as
+  // one is the failure this whole plugin exists to avoid. Say it plainly
+  // instead — an error the user can see beats a shorter list they can't.
+  if (!mine.read || !review.read) {
+    throw new Error('Signed in, but GitHub’s list didn’t finish loading — try refreshing');
   }
 
   return { login, pulls, blockedOrgs: [] };
-}
-
-/** GitHub says so in as many words when a filter matches nothing. */
-function looksEmpty(page: PageResult): boolean {
-  return /No results matched|no open pull requests|didn’t match any/i.test(page.title)
-    ? true
-    : page.rows.length === 0 && /pull requests/i.test(page.title);
 }
 
 /** Whoever the session belongs to, from the cookie GitHub sets on login. */
