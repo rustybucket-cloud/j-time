@@ -87,9 +87,13 @@ const json = (res, status, body) => {
 };
 
 /**
- * A second token, standing in for a work org's fine-grained one: it sees a
- * different pull request and a different blocked org, so merging and the
- * per-account rows both have something to show.
+ * A second token, standing in for a work org's *fine-grained* one.
+ *
+ * It behaves the way GitHub says one does: /user/orgs answers 200 with an empty
+ * list, and `viewer.organizations` is refused outright with "Resource not
+ * accessible by personal access token". That refusal used to fail the whole
+ * fetch, so this is the case worth keeping — the pull requests must still
+ * arrive.
  */
 const WORK_TOKEN = 'sandbox-work-token';
 const WORK = [
@@ -108,16 +112,31 @@ const server = createServer((req, res) => {
     }
     const work = (req.headers.authorization ?? '').endsWith(WORK_TOKEN);
     if (req.method === 'GET' && req.url.startsWith('/user/orgs')) {
-      console.log('user/orgs', work ? '(work)' : '');
-      json(res, 200, (work ? ['org-work'] : ALL_ORGS).map((login) => ({ login })));
+      console.log('user/orgs', work ? '(fine-grained → empty)' : '');
+      // Fine-grained tokens get an empty list, whatever they were granted.
+      json(res, 200, work ? [] : ALL_ORGS.map((login) => ({ login })));
       return;
     }
     if (req.method !== 'POST' || !req.url.startsWith('/graphql')) {
       res.writeHead(404).end('not found');
       return;
     }
+    const query = JSON.parse(body).query ?? '';
+    if (work && query.includes('organizations')) {
+      console.log('graphql (work) organizations → refused');
+      json(res, 200, {
+        data: { viewer: null },
+        errors: [
+          {
+            message: 'Resource not accessible by personal access token',
+            path: ['viewer', 'organizations'],
+          },
+        ],
+      });
+      return;
+    }
     console.log('graphql', work ? '(work)' : '', JSON.parse(body).variables?.limit ?? '');
-    const visible = work ? ['org-work'] : VISIBLE_ORGS;
+    const visible = VISIBLE_ORGS;
     json(res, 200, {
       data: {
         viewer: { login: ME, organizations: { nodes: visible.map((login) => ({ login })) } },

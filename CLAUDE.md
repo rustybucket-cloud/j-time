@@ -299,6 +299,22 @@ docs rather than assumed: "if the requested person is on a team that is
 requested for review, then review requests for that team will also appear".
 `user-review-requested:` is the direct-only one — don't "fix" the query to that.
 
+**A GraphQL error does not mean the request failed.** GitHub answers with HTTP
+200, the fields it could resolve in `data`, and an `errors` entry per field it
+refused. `graphql()` therefore returns both and throws nothing; `getPulls`
+fails only when *neither* search resolved. Throwing on the first error is what
+made a fine-grained token show "Resource not accessible by personal access
+token" instead of its pull requests — the token could search perfectly well, it
+just couldn't read `viewer.organizations`. When it does throw, the message
+carries the refused field's `path`, because that message on its own tells you
+nothing about what to grant.
+
+**A diagnostic must not be able to sink the thing it diagnoses.**
+`viewer.organizations` lives in its own request, sent only after REST
+`/user/orgs` came back non-empty — which never happens for a fine-grained
+token. So the field that costs one the whole fetch is never asked for by a
+token that would be refused it.
+
 **The org warning is classic-token-only, and that's GitHub's rule.**
 `GET /user/orgs` is documented as returning "a 200 Success response with an
 empty list" to a fine-grained token. It degrades the right way — an empty
