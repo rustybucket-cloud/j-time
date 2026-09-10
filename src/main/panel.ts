@@ -9,7 +9,7 @@
 
 import { join } from 'path';
 import { BrowserWindow, app, screen, shell } from 'electron';
-import * as data from './data';
+import { refreshIfStale } from './shell';
 
 const WIDTH = 720;
 /** Just the search field. The renderer reports its real height once it has drawn. */
@@ -128,7 +128,7 @@ export function showPanel(): void {
   if (!panel) return;
   // Cheap when the 60-second poll has already been round recently, and the
   // difference between a launcher and a dashboard is that a launcher is current.
-  data.refreshIfStale();
+  refreshIfStale();
   place(panel, panel.getBounds().height);
   panel.show();
   panel.focus();

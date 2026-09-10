@@ -1,9 +1,10 @@
 #!/bin/sh
 #
-# j-time against a pretend JIRA, with its own scratch state.
+# j-time against a pretend JIRA and a pretend GitHub, with its own scratch state.
 #
-# Nothing here can reach a real board or your real ~/.j-time: the config points at
-# scripts/mock-jira.mjs, and JT_HOME redirects state.json into a temp directory.
+# Nothing here can reach a real board, a real repo or your real ~/.j-time: the
+# config points at scripts/mock-jira.mjs and scripts/mock-github.mjs, and JT_HOME
+# redirects state.json into a temp directory.
 # That matters more than it looks, because filing time posts a worklog the moment
 # you pick an activity — "just try it on a real story" creates real worklogs.
 #
@@ -14,24 +15,35 @@ set -e
 cd "$(dirname "$0")/.."
 
 PORT=${MOCK_PORT:-4199}
+GH_PORT=${MOCK_GH_PORT:-4198}
 SANDBOX=${JT_SANDBOX:-/tmp/j-time-sandbox}
 SHOT="$1"
 
 rm -rf "$SANDBOX"
 mkdir -p "$SANDBOX"
 
-# Plaintext apiToken on purpose: readConfig falls back to it when the value was
-# never encrypted, which keeps the fixture readable and machine-independent.
+# Plaintext credentials on purpose: readConfig falls back to them when the value
+# was never encrypted, which keeps the fixture readable and machine-independent.
 cat > "$SANDBOX/config.json" <<JSON
 {
-  "baseUrl": "http://localhost:$PORT",
-  "email": "dana@example.test",
-  "apiToken": "sandbox-token",
-  "activities": ["Meeting", "Building", "Testing", "Review", "Other"],
-  "roundMinutes": 5,
-  "boardId": null,
-  "mineOnly": true,
-  "hotkey": "Command+Shift+J"
+  "shell": { "hotkey": "Command+Shift+J" },
+  "layout": { "order": ["jira", "github"], "collapsed": [], "pinsOff": [] },
+  "plugins": {
+    "jira": {
+      "baseUrl": "http://localhost:$PORT",
+      "email": "dana@example.test",
+      "apiToken": "sandbox-token",
+      "activities": ["Meeting", "Building", "Testing", "Review", "Other"],
+      "roundMinutes": 5,
+      "boardId": null,
+      "mineOnly": true
+    },
+    "github": {
+      "host": "http://localhost:$GH_PORT",
+      "token": "sandbox-token",
+      "limit": 25
+    }
+  }
 }
 JSON
 
@@ -66,7 +78,9 @@ node -e '
 
 node scripts/mock-jira.mjs "$PORT" &
 MOCK=$!
-trap 'kill $MOCK 2>/dev/null' EXIT INT TERM
+node scripts/mock-github.mjs "$GH_PORT" &
+MOCK_GH=$!
+trap 'kill $MOCK $MOCK_GH 2>/dev/null' EXIT INT TERM
 sleep 1
 
 npx electron-vite build >/dev/null

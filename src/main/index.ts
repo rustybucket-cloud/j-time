@@ -5,15 +5,15 @@
  */
 
 import { promises as fs } from 'fs';
+import path from 'path';
 import { app, globalShortcut } from 'electron';
-import { DEFAULT_HOTKEY } from '@shared/conn';
-import * as data from './data';
+import { DEFAULT_HOTKEY } from '@shared/shell';
+import * as shell from './shell';
+import { PLUGINS } from './plugins';
 import { registerIpc } from './ipc';
 import { beginQuit, createPanel, getPanel, showPanel, togglePanel } from './panel';
 import { createTray, destroyTray } from './tray';
 import { installMenu } from './menu';
-
-let poll: NodeJS.Timeout | null = null;
 
 /**
  * Bind the palette hotkey, reporting rather than throwing when it's taken.
@@ -39,7 +39,19 @@ function bindHotkey(accelerator: string): void {
       ok = false;
     }
   }
-  data.setHotkeyRegistered(ok);
+  shell.setHotkeyRegistered(ok);
+}
+
+/**
+ * A sandbox run gets its own Chromium profile as well as its own state.
+ *
+ * The single-instance lock is keyed on `userData`, so without this a sandbox
+ * launched while the real j-time is running loses the lock and quits on the
+ * spot — no window, no request, and `scripts/sandbox.sh` still printing `wrote
+ * …`. Which is exactly the symptom you'd least expect to be about a lock.
+ */
+if (process.env.JT_HOME) {
+  app.setPath('userData', path.join(path.resolve(process.env.JT_HOME), 'chromium'));
 }
 
 // A second copy would be a second writer on state.json and a second menu bar
@@ -53,16 +65,17 @@ if (!app.requestSingleInstanceLock()) {
     app.dock?.hide();
 
     installMenu();
+    for (const plugin of PLUGINS) shell.register(plugin);
     registerIpc();
     createPanel();
     createTray();
 
-    await data.load();
-    bindHotkey(data.currentConfig().hotkey);
-    data.events.on('config', (config) => bindHotkey(config.hotkey));
+    await shell.load();
+    bindHotkey(shell.shellConfig().hotkey);
+    shell.events.on('shell-config', (config) => bindHotkey(config.hotkey));
 
-    void data.refresh();
-    poll = data.startPolling();
+    void shell.refreshAll();
+    shell.startPolling();
 
     // Launch opens the panel: a menu-bar app that starts silently looks like it
     // failed to start, and with no credentials there is nothing to show anyway
@@ -79,7 +92,7 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on('will-quit', () => {
     globalShortcut.unregisterAll();
-    if (poll) clearInterval(poll);
+    shell.stopPolling();
     destroyTray();
   });
 }

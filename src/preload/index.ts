@@ -1,11 +1,17 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { Bridge, Snapshot } from '@shared/ipc';
-import type { JiraConfig } from '@shared/conn';
+import type { LayoutState } from '@shared/layout';
+import type { ShellConfig } from '@shared/shell';
 
 /**
  * The renderer's entire view of the outside world. No `nodeIntegration`, no
- * `remote`, and above all no credentials: the API token never leaves the main
+ * `remote`, and above all no credentials: no plugin's token ever leaves the main
  * process, so a compromised renderer has nothing to leak.
+ *
+ * The plugin channels are generic on purpose — a named method per verb stopped
+ * scaling at the second plugin. Each plugin's renderer half wraps `invoke` and
+ * `query` in typed functions of its own, so the argument names live next to the
+ * code that knows what they mean.
  */
 const bridge: Bridge = {
   getSnapshot: () => ipcRenderer.invoke('snapshot'),
@@ -14,25 +20,20 @@ const bridge: Bridge = {
     ipcRenderer.on('snapshot', listener);
     return () => ipcRenderer.removeListener('snapshot', listener);
   },
-  refresh: () => ipcRenderer.invoke('refresh'),
 
-  start: (key) => ipcRenderer.invoke('start', key),
-  stop: (activity) => ipcRenderer.invoke('stop', activity),
-  fileTime: (key, activity) => ipcRenderer.invoke('fileTime', key, activity),
-  finish: (key, transitionId) => ipcRenderer.invoke('finish', key, transitionId),
-  transition: (key, transitionId) => ipcRenderer.invoke('transition', key, transitionId),
-  relabel: (key, from, to) => ipcRenderer.invoke('relabel', key, from, to),
-  discard: (key, activity) => ipcRenderer.invoke('discard', key, activity),
+  invoke: (plugin, command, args = []) => ipcRenderer.invoke('invoke', plugin, command, args),
+  query: (plugin, name, args = []) => ipcRenderer.invoke('query', plugin, name, args),
+  refresh: (plugin) => ipcRenderer.invoke('refresh', plugin),
+  savePluginConfig: (plugin, patch) => ipcRenderer.invoke('savePluginConfig', plugin, patch),
 
-  getTransitions: (key) => ipcRenderer.invoke('getTransitions', key),
-  openIssue: (key) => ipcRenderer.invoke('openIssue', key),
+  saveShellConfig: (patch: Partial<ShellConfig>) => ipcRenderer.invoke('saveShellConfig', patch),
+  saveLayout: (layout: LayoutState) => ipcRenderer.invoke('saveLayout', layout),
+
+  openUrl: (url: string) => ipcRenderer.invoke('openUrl', url),
   copy: (text) => ipcRenderer.invoke('copy', text),
-
-  saveConfig: (patch: Partial<JiraConfig>) => ipcRenderer.invoke('saveConfig', patch),
   setHeight: (height) => ipcRenderer.invoke('setHeight', height),
   setDismissOnBlur: (value) => ipcRenderer.invoke('setDismissOnBlur', value),
   hide: () => ipcRenderer.invoke('hide'),
-  openUrl: (url: string) => ipcRenderer.invoke('openUrl', url),
   quit: () => ipcRenderer.invoke('quit'),
 };
 

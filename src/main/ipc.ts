@@ -1,33 +1,35 @@
 /**
- * The bridge's server half. Every channel is a thin call into `data`, which owns
- * the ordering and the persistence — nothing here decides anything.
+ * The bridge's server half. Every channel is a thin call into the shell registry,
+ * which owns the ordering and the persistence — nothing here decides anything.
  */
 
-import { BrowserWindow, clipboard, ipcMain, shell, app } from 'electron';
-import type { JiraConfig } from '@shared/conn';
-import * as data from './data';
+import { BrowserWindow, clipboard, ipcMain, shell as electronShell, app } from 'electron';
+import type { LayoutState } from '@shared/layout';
+import type { ShellConfig } from '@shared/shell';
+import * as shell from './shell';
 import { hidePanel, setDismissOnBlur, setPanelHeight } from './panel';
 
 export function registerIpc(): void {
-  ipcMain.handle('snapshot', () => data.snapshot());
-  ipcMain.handle('refresh', () => data.refresh());
+  ipcMain.handle('snapshot', () => shell.snapshot());
+  ipcMain.handle('refresh', (_e, plugin?: string) =>
+    plugin ? shell.refreshPlugin(plugin) : shell.refreshAll(),
+  );
 
-  ipcMain.handle('start', (_e, key: string) => data.start(key));
-  ipcMain.handle('stop', (_e, activity?: string) => data.stop(activity));
-  ipcMain.handle('fileTime', (_e, key: string, activity: string) => data.fileTime(key, activity));
-  ipcMain.handle('finish', (_e, key: string, transitionId?: string) => data.finish(key, transitionId));
-  ipcMain.handle('transition', (_e, key: string, id: string) => data.transition(key, id));
-  ipcMain.handle('relabel', (_e, key: string, from: string, to: string) => data.relabel(key, from, to));
-  ipcMain.handle('discard', (_e, key: string, activity: string) => data.discard(key, activity));
+  ipcMain.handle('invoke', (_e, plugin: string, command: string, args: unknown[] = []) =>
+    shell.invoke(plugin, command, args),
+  );
+  ipcMain.handle('query', (_e, plugin: string, name: string, args: unknown[] = []) =>
+    shell.query(plugin, name, args),
+  );
 
-  ipcMain.handle('getTransitions', (_e, key: string) => data.getTransitions(key));
+  ipcMain.handle('savePluginConfig', (_e, plugin: string, patch: Record<string, unknown>) =>
+    shell.savePluginConfig(plugin, patch),
+  );
+  ipcMain.handle('saveShellConfig', (_e, patch: Partial<ShellConfig>) =>
+    shell.saveShellConfig(patch),
+  );
+  ipcMain.handle('saveLayout', (_e, layout: LayoutState) => shell.saveLayout(layout));
 
-  ipcMain.handle('openIssue', (_e, key: string) => {
-    // Opening a browser is a context switch; the palette has no business staying
-    // in front of the page it just sent you to.
-    hidePanel();
-    return shell.openExternal(data.issueUrl(key));
-  });
   ipcMain.handle('openUrl', (_e, url: string) => {
     // Only the palette's own links come through here, but openExternal hands
     // whatever it is given to the OS — so a non-web scheme must not reach it.
@@ -38,13 +40,13 @@ export function registerIpc(): void {
       return;
     }
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return;
+    // Opening a browser is a context switch; the palette has no business staying
+    // in front of the page it just sent you to.
     hidePanel();
-    return shell.openExternal(parsed.href);
+    return electronShell.openExternal(parsed.href);
   });
 
   ipcMain.handle('copy', (_e, text: string) => clipboard.writeText(text));
-
-  ipcMain.handle('saveConfig', (_e, patch: Partial<JiraConfig>) => data.saveConfigPatch(patch));
   ipcMain.handle('setHeight', (_e, height: number) => setPanelHeight(height));
   ipcMain.handle('setDismissOnBlur', (_e, value: boolean) => setDismissOnBlur(value));
   ipcMain.handle('hide', () => hidePanel());
@@ -52,7 +54,7 @@ export function registerIpc(): void {
 
   // One broadcast for every change, so a timer started from the menu bar shows up
   // in an already-open palette without it having to poll.
-  data.events.on('change', (snapshot) => {
+  shell.events.on('change', (snapshot) => {
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) win.webContents.send('snapshot', snapshot);
     }

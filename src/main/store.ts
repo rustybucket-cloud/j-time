@@ -4,6 +4,11 @@
  * Deliberately NOT ~/.jira-timer. j-time is a second writer with no lock between
  * them, so sharing that file with an always-on jira-timer would interleave two
  * read-modify-write cycles and silently drop segments.
+ *
+ * config.json now holds a section per plugin rather than one flat JIRA config.
+ * The old shape is migrated on read — a config written by 0.2 is somebody's real
+ * credentials, and asking them to type an API token again because the app grew a
+ * second plugin would be a poor trade.
  */
 
 import { promises as fs } from 'fs';
@@ -12,7 +17,8 @@ import path from 'path';
 import { safeStorage } from 'electron';
 import type { TimerState } from '@shared/types';
 import { emptyState, normalizeState } from '@shared/timer-logic';
-import { defaultConfig, type JiraConfig } from '@shared/conn';
+import { defaultLayout, type LayoutState } from '@shared/layout';
+import { defaultShellConfig, type ShellConfig } from '@shared/shell';
 
 /**
  * `JT_HOME` redirects everything to a scratch directory. That's what makes
@@ -67,6 +73,12 @@ async function writeAtomic(file: string, contents: string): Promise<void> {
   await fs.rename(tmp, file);
 }
 
+/**
+ * The timer's state file, which stays exactly where it has always been.
+ *
+ * It belongs to the JIRA plugin now, but it is the one file in the app with no
+ * second copy, so it does not move house for a refactor.
+ */
 export async function readState(): Promise<TimerState> {
   try {
     const parsed = JSON.parse(await fs.readFile(STATE_FILE, 'utf8'));
@@ -81,60 +93,125 @@ export async function writeState(state: TimerState): Promise<void> {
   await writeAtomic(STATE_FILE, JSON.stringify(state, null, 2));
 }
 
+export type PluginConfigs = Record<string, Record<string, unknown>>;
+
+export interface RootConfig {
+  shell: ShellConfig;
+  layout: LayoutState;
+  plugins: PluginConfigs;
+}
+
 /**
- * On disk the token is encrypted, so config.json can't be read out of a backup or
- * a synced home directory. `apiToken` is the plaintext fallback for the platforms
- * where the OS keychain isn't available; it is never written when encryption is.
+ * Which fields of which plugin are secrets, by plugin id.
+ *
+ * The store has to be told rather than guessing: it is the only place that knows
+ * how to encrypt, and the plugins are the only things that know which of their
+ * fields is a credential.
+ */
+export type SecretFields = Record<string, readonly string[]>;
+
+/**
+ * On disk a secret is encrypted under `<field>Enc`, so config.json can't be read
+ * out of a backup or a synced home directory. The plaintext field is the fallback
+ * for platforms with no OS keychain; it is never written when encryption works.
  *
  * That fallback is why the file mode matters as much as the encryption: on a
- * machine with no keychain this field is the token, in cleartext.
+ * machine with no keychain these fields are the credentials, in cleartext.
  */
-interface StoredConfig extends Partial<Omit<JiraConfig, 'apiToken'>> {
-  apiToken?: string;
-  apiTokenEnc?: string;
+const encKey = (field: string): string => `${field}Enc`;
+
+function decryptSecrets(
+  raw: Record<string, unknown>,
+  fields: readonly string[],
+): Record<string, unknown> {
+  const out = { ...raw };
+  for (const field of fields) {
+    const sealed = out[encKey(field)];
+    delete out[encKey(field)];
+    if (typeof sealed === 'string' && sealed) {
+      try {
+        out[field] = safeStorage.decryptString(Buffer.from(sealed, 'base64'));
+        continue;
+      } catch {
+        // A keychain entry from another machine, or a reset login keychain. Treat
+        // it as absent so the app asks again rather than sending garbage.
+        out[field] = '';
+        continue;
+      }
+    }
+    if (typeof out[field] !== 'string') out[field] = '';
+  }
+  return out;
 }
 
-function decryptToken(stored: StoredConfig): string {
-  if (stored.apiTokenEnc) {
-    try {
-      return safeStorage.decryptString(Buffer.from(stored.apiTokenEnc, 'base64'));
-    } catch {
-      // A keychain entry from another machine, or a reset login keychain. Treat it
-      // as absent so the app asks for the token again rather than sending garbage.
-      return '';
+function encryptSecrets(
+  raw: Record<string, unknown>,
+  fields: readonly string[],
+): Record<string, unknown> {
+  const out = { ...raw };
+  for (const field of fields) {
+    const value = out[field];
+    delete out[field];
+    if (typeof value !== 'string' || !value) continue;
+    if (safeStorage.isEncryptionAvailable()) {
+      out[encKey(field)] = safeStorage.encryptString(value).toString('base64');
+    } else {
+      out[field] = value;
     }
   }
-  return stored.apiToken ?? '';
+  return out;
 }
 
-export async function readConfig(): Promise<JiraConfig> {
-  const base = defaultConfig();
-  let stored: StoredConfig;
-  try {
-    stored = JSON.parse(await fs.readFile(CONFIG_FILE, 'utf8'));
-  } catch {
-    return base;
-  }
+/**
+ * A config written before the shell had plugins: one flat JIRA object with the
+ * hotkey mixed in.
+ *
+ * Recognised by what it lacks. Anything with a `plugins` key is already current,
+ * and an empty file is a first run rather than a migration.
+ */
+function migrate(stored: Record<string, unknown>): Record<string, unknown> {
+  if (stored.plugins || Object.keys(stored).length === 0) return stored;
+  const { hotkey, ...jira } = stored;
   return {
-    ...base,
-    ...stored,
-    apiToken: decryptToken(stored),
-    // Arrays and numbers from an older file can be the wrong shape; keep the
-    // defaults rather than letting a bad config break the palette.
-    activities: Array.isArray(stored.activities) ? stored.activities : base.activities,
-    roundMinutes: Number.isFinite(stored.roundMinutes) ? Number(stored.roundMinutes) : base.roundMinutes,
-    boardId: typeof stored.boardId === 'number' ? stored.boardId : null,
-    hotkey: stored.hotkey || base.hotkey,
+    shell: typeof hotkey === 'string' && hotkey ? { hotkey } : {},
+    layout: {},
+    plugins: { jira },
   };
 }
 
-export async function writeConfig(config: JiraConfig): Promise<void> {
-  const { apiToken, ...rest } = config;
-  const stored: StoredConfig = { ...rest };
-  if (apiToken && safeStorage.isEncryptionAvailable()) {
-    stored.apiTokenEnc = safeStorage.encryptString(apiToken).toString('base64');
-  } else if (apiToken) {
-    stored.apiToken = apiToken;
+export async function readConfig(secrets: SecretFields): Promise<RootConfig> {
+  let stored: Record<string, unknown>;
+  try {
+    stored = migrate(JSON.parse(await fs.readFile(CONFIG_FILE, 'utf8')));
+  } catch {
+    stored = {};
   }
-  await writeAtomic(CONFIG_FILE, JSON.stringify(stored, null, 2));
+
+  const storedPlugins = (stored.plugins ?? {}) as PluginConfigs;
+  const plugins: PluginConfigs = {};
+  for (const [id, fields] of Object.entries(secrets)) {
+    plugins[id] = decryptSecrets(storedPlugins[id] ?? {}, fields);
+  }
+  // A section belonging to a plugin that isn't installed this launch is carried
+  // through untouched, so uninstalling one doesn't wipe its credentials.
+  for (const [id, raw] of Object.entries(storedPlugins)) {
+    if (!(id in plugins)) plugins[id] = raw;
+  }
+
+  return {
+    shell: { ...defaultShellConfig(), ...((stored.shell ?? {}) as Partial<ShellConfig>) },
+    layout: { ...defaultLayout(), ...((stored.layout ?? {}) as Partial<LayoutState>) },
+    plugins,
+  };
+}
+
+export async function writeConfig(root: RootConfig, secrets: SecretFields): Promise<void> {
+  const plugins: PluginConfigs = {};
+  for (const [id, raw] of Object.entries(root.plugins)) {
+    plugins[id] = encryptSecrets(raw, secrets[id] ?? []);
+  }
+  await writeAtomic(
+    CONFIG_FILE,
+    JSON.stringify({ shell: root.shell, layout: root.layout, plugins }, null, 2),
+  );
 }

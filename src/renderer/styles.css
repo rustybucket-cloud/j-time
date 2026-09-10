@@ -161,12 +161,60 @@ body {
   display: none;
 }
 
-.section-label {
+/* --- Sections --- */
+
+/*
+ * A section heading is a row you can land on, because that is what makes
+ * collapsing and reordering reachable from the keyboard. It stays visually a
+ * heading rather than becoming another row: same faint uppercase label, with the
+ * selection drawn as a wash rather than the solid a row gets.
+ */
+.section-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   padding: 8px 8px 4px;
+  border-radius: 8px;
+  cursor: default;
+}
+
+.section-head.selected {
+  background: var(--surface-hi);
+}
+
+.section-head.fixed {
+  /* Pinned and Top hit are the shell's own; there is nothing to twist open. */
+  padding-left: 8px;
+}
+
+.section-label {
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+  color: var(--faint);
+}
+
+.section-note {
+  font-size: 11px;
+  color: var(--faint);
+}
+
+.twist {
+  width: 10px;
+  font-size: 9px;
+  color: var(--faint);
+  transition: transform 80ms ease;
+}
+
+.twist.closed {
+  transform: rotate(-90deg);
+}
+
+/* A plugin's own grouping inside its section — the board's columns, say. */
+.subsection-label {
+  padding: 6px 8px 2px 26px;
+  font-size: 11px;
   color: var(--faint);
 }
 
@@ -192,8 +240,31 @@ body {
   flex: 0 0 auto;
 }
 
-.row.running .lead {
+.row.running .lead,
+.row .lead.glyph-active {
   color: var(--accent);
+}
+
+/*
+ * Leading marks are semantic, so the colour lives here rather than with whatever
+ * plugin drew the row: "waiting on you" has to look the same in every section.
+ * Note what is missing — green. It is the connection dot's colour and not a UI
+ * colour, so an approved PR reads as settled rather than as a traffic light.
+ */
+.row .lead.glyph-attention {
+  color: var(--warn);
+}
+
+.row .lead.glyph-blocked {
+  color: var(--danger);
+}
+
+.row .lead.glyph-ok {
+  color: var(--dim);
+}
+
+.row .lead.glyph-muted {
+  opacity: 0.5;
 }
 
 .row .labels {
@@ -255,6 +326,12 @@ mark {
   border-color: transparent;
   background: hsl(38 92% 58% / 0.15);
   color: var(--warn);
+}
+
+.pill.danger {
+  border-color: transparent;
+  background: hsl(0 72% 60% / 0.15);
+  color: var(--danger);
 }
 
 .clock {
@@ -579,4 +656,68 @@ kbd {
 
 .banner.warn {
   border-left-color: var(--warn);
+}
+
+/* --- The section arrangement editor, in Settings --- */
+
+.sections-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.section-setting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.section-setting .name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  font-weight: 600;
+  min-width: 0;
+}
+
+.section-setting button {
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--dim);
+  font: inherit;
+  font-size: 12px;
+  padding: 2px 8px;
+  cursor: default;
+}
+
+.section-setting button:disabled {
+  opacity: 0.35;
+}
+
+.section-setting button:not(:disabled):hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/*
+ * A checkbox next to its word, not a field label — so it opts out of the
+ * uppercase treatment `.field label` gives the headings above an input.
+ */
+.section-setting .check {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 0;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--dim);
+  white-space: nowrap;
 }

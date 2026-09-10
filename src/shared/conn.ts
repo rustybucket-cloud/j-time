@@ -52,11 +52,7 @@ export interface JiraConfig {
   boardId: number | null;
   /** Restrict the board to issues assigned to you. */
   mineOnly: boolean;
-  /** Accelerator that toggles the palette. */
-  hotkey: string;
 }
-
-export const DEFAULT_HOTKEY = 'Command+Shift+J';
 
 export function defaultConfig(): JiraConfig {
   return {
@@ -67,7 +63,6 @@ export function defaultConfig(): JiraConfig {
     roundMinutes: 5,
     boardId: null,
     mineOnly: true,
-    hotkey: DEFAULT_HOTKEY,
   };
 }
 

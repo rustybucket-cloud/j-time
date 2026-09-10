@@ -1,8 +1,18 @@
 # j-time
 
-A menu-bar JIRA timer with a Raycast-style command palette. Press a hotkey, see
-what you're in the middle of, put the clock on one of them, and file the time
-against JIRA without leaving the keyboard.
+A menu-bar launcher with a Raycast-style command palette. Press a hotkey and see
+what you're in the middle of — across every app it's plugged into — then act on
+it without leaving the keyboard.
+
+Two plugins ship with it:
+
+- **JIRA** — your board, with a timer. Put the clock on a story and file the
+  time against JIRA.
+- **Pull Requests** — what's waiting on your review, and what you have open.
+
+Each plugin gets its own section. You choose the order, collapse the ones you're
+not using, and a section may lift one row above the rest — the running timer, or
+the review that has waited longest.
 
 ![The palette](docs/images/palette.png)
 
@@ -56,39 +66,67 @@ npm start
 
 ## Set up
 
-The first launch opens straight to Settings. You need three things:
+The first launch opens straight to Settings. Each plugin is set up separately,
+and you can use one without the other.
+
+**JIRA** needs three things:
 
 - your JIRA URL, e.g. `https://your-org.atlassian.net`
 - the email on the account
 - an API token from **id.atlassian.com → Security → API tokens**
 
-Also configurable there: the activity labels you file time under, the rounding
-increment, and the hotkey.
+Also there: the activity labels you file time under, and the rounding increment.
 
-Atlassian API token is stored encrypted with Electron's safeStorage.
+**Pull Requests** needs a GitHub personal access token with `repo` and
+`read:org`. The API root defaults to `https://api.github.com`; point it at
+`https://your-company.com/api` for GitHub Enterprise.
+
+Both tokens are stored encrypted with Electron's safeStorage.
+
+The app's own settings — the hotkey, and the order of the sections — are on the
+same screen, reached with `⌘,`.
 
 ## Use it
 
-Press `⌘⇧J` for the palette. In Progress leads; the running story is pinned to
-the top with a live clock.
+Press `⌘⇧J` for the palette. Sections appear in the order you arranged them; the
+running story and the oldest review request are pinned above them.
+
+Typing sorts *within* each section and leaves the sections where they are — the
+arrangement is the thing you set up, and dissolving it the moment you search
+would make it useless exactly when you're looking for something. What typing
+does instead is lift the single best match across everything into **Top hit**.
 
 | Key | |
 |---|---|
 | `⌘⇧J` | Show or hide the palette |
-| `↩` | Start or stop the clock on the selected story |
-| `⌘K` | Every action for the selected story |
+| `↩` | Run the selected row — or collapse the section, on a heading |
+| `⌘K` | Every action for the selected row |
+| `←` / `→` | Collapse or expand the section |
+| `⌘↑` / `⌘↓` | Move the section up or down |
+| `⌘R` / `⌘,` | Refresh everything / Settings |
+| `⌘Q` | Quit |
+| `⎋` or `⌫` | Back one level, then close |
+
+On a JIRA story:
+
+| Key | |
+|---|---|
+| `↩` | Start or stop the clock |
 | `⌘F` | File its unfiled time under an activity |
 | `⌘D` | Finish it — sweep any unfiled time, then transition |
 | `⌘I` | Clock, activity breakdown, estimate |
 | `⌘O` / `⌘C` | Open in JIRA / copy the key |
-| `⌘R` / `⌘,` | Refresh the board / Settings |
-| `⌘Q` | Quit |
-| `⎋` or `⌫` | Back one level, then close |
+
+On a pull request:
+
+| Key | |
+|---|---|
+| `↩` | Open it in a browser |
+| `⌘C` | Copy the link |
 
 The button at the bottom-left of the palette opens the app's own menu — Settings,
-refresh, JIRA in a browser, and quitting. With no Dock icon and no application
-menu, that button and the menu bar item are the only ways out that don't need a
-keystroke.
+refresh and quitting. With no Dock icon and no application menu, that button and
+the menu bar item are the only ways out that don't need a keystroke.
 
 The menu bar ticks whenever the clock is running. Right-click it for stop, file
 and refresh.
@@ -101,5 +139,7 @@ Time is measured, never estimated — an idle window accrues nothing.
 
 ## Where your data lives
 
-`~/.j-time/` — `config.json` and `state.json`, both written `0600`. The API
-token is encrypted with your login keychain before it touches disk.
+`~/.j-time/` — `config.json` and `state.json`, both written `0600`. Every
+plugin's credentials are encrypted with your login keychain before they touch
+disk. `config.json` holds a section per plugin; a config written by an earlier
+version, when JIRA was the whole app, is migrated in place on first read.

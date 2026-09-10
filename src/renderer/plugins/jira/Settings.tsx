@@ -1,20 +1,23 @@
 import { useState, type ReactNode } from 'react';
-import type { Snapshot } from '@shared/ipc';
-import { connDotClass, CRED_LABELS, connMessage, DEFAULT_HOTKEY } from '@shared/conn';
-import { prettyAccelerator } from '@shared/keys';
+import type { JiraSnapshot } from '@shared/jira';
+import { connDotClass, CRED_LABELS, connMessage } from '@shared/conn';
 
 /**
- * Where the credentials live.
+ * Where the JIRA credentials live.
  *
  * A packaged .app inherits none of your shell's environment, so unlike jira-timer
  * there is no `.env.local` to fall back on — this form is the only way in, which
  * is why the first launch opens straight to it.
+ *
+ * The hotkey moved out when the shell grew plugins: it is the shell's, not
+ * JIRA's, and having it on one plugin's form would have made that plugin look
+ * like the app.
  */
 export function Settings({
   snapshot,
   onSaved,
 }: {
-  snapshot: Snapshot;
+  snapshot: JiraSnapshot;
   onSaved: (message: string) => void;
 }): ReactNode {
   const { config, conn } = snapshot;
@@ -25,12 +28,11 @@ export function Settings({
   const [apiToken, setApiToken] = useState('');
   const [activities, setActivities] = useState(config.activities.join(', '));
   const [roundMinutes, setRoundMinutes] = useState(String(config.roundMinutes));
-  const [hotkey, setHotkey] = useState(config.hotkey);
   const [saving, setSaving] = useState(false);
 
   async function save(): Promise<void> {
     setSaving(true);
-    const result = await window.jt.saveConfig({
+    const result = await window.jt.savePluginConfig('jira', {
       baseUrl,
       email,
       ...(apiToken.trim() ? { apiToken: apiToken.trim() } : {}),
@@ -39,7 +41,6 @@ export function Settings({
         .map((a) => a.trim())
         .filter(Boolean),
       roundMinutes: Number(roundMinutes) || 0,
-      hotkey: hotkey.trim() || DEFAULT_HOTKEY,
     });
     setSaving(false);
     onSaved(result.ok ? (result.message ?? 'Saved') : result.error);
@@ -63,13 +64,6 @@ export function Settings({
       <div className={`banner${connDotClass(conn) === 'bad' ? ' bad' : ''}`}>
         <span className={`dot ${connDotClass(conn)}`} /> {connMessage(conn)}
       </div>
-
-      {!snapshot.hotkeyRegistered && (
-        <div className="banner warn">
-          Another app already owns {prettyAccelerator(config.hotkey)}. Pick a different
-          shortcut below — until you do, the menu bar item is the only way in.
-        </div>
-      )}
 
       <div className="field">
         <label>{CRED_LABELS.baseUrl}</label>
@@ -115,25 +109,15 @@ export function Settings({
         </div>
       </div>
 
-      <div className="field row2">
-        <div>
-          <label>Rounding (minutes)</label>
-          <input
-            type="number"
-            min={0}
-            value={roundMinutes}
-            onChange={(e) => setRoundMinutes(e.target.value)}
-          />
-          <div className="note">Applies to the Done sweep only. Filing is always exact.</div>
-        </div>
-        <div>
-          <label>Hotkey</label>
-          <input type="text" value={hotkey} onChange={(e) => setHotkey(e.target.value)} />
-          <div className="note">
-            Electron accelerator, e.g. Command+Shift+J — currently{' '}
-            {prettyAccelerator(hotkey || DEFAULT_HOTKEY)}.
-          </div>
-        </div>
+      <div className="field">
+        <label>Rounding (minutes)</label>
+        <input
+          type="number"
+          min={0}
+          value={roundMinutes}
+          onChange={(e) => setRoundMinutes(e.target.value)}
+        />
+        <div className="note">Applies to the Done sweep only. Filing is always exact.</div>
       </div>
 
       <div className="row selected" onClick={() => void save()}>

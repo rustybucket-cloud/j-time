@@ -1,58 +1,63 @@
 /**
  * The contract between the main process and the palette.
  *
- * The renderer never talks to JIRA and never touches disk: it renders a Snapshot
- * and sends back intents. That's what keeps the credentials, the state file and
- * the ordering rules in one process with one writer.
+ * The renderer never talks to a service and never touches disk: it renders a
+ * Snapshot and sends back intents. That's what keeps every plugin's credentials,
+ * its state file and its ordering rules in one process with one writer.
+ *
+ * There used to be a named bridge method per JIRA verb. With more than one plugin
+ * that list is the wrong shape — so commands are addressed by plugin and name,
+ * and each plugin's renderer half wraps them in a typed client of its own. The
+ * typing is not lost, just moved next to the code that knows what the arguments
+ * mean.
  */
 
-import type { JiraBoard, JiraIssue, JiraSprint, JiraTransition, TimerState } from './types';
-import type { JiraConfig, MyselfResult } from './conn';
+import type { ActionResult, QueryResult } from './plugin';
+import type { LayoutState } from './layout';
+import type { ShellConfig, ShellSnapshot } from './shell';
+import type { JiraSnapshot } from './jira';
+import type { GithubSnapshot } from './github';
 
-/** Config as the renderer sees it. The API token is never sent across the bridge. */
-export type PublicConfig = Omit<JiraConfig, 'apiToken'> & { hasToken: boolean };
-
-export interface Snapshot {
-  conn: MyselfResult;
-  config: PublicConfig;
-  /** Boards you have work in. Empty until the first successful fetch. */
-  boards: JiraBoard[];
-  sprint: JiraSprint | null;
-  issues: JiraIssue[];
-  doneIssues: JiraIssue[];
-  state: TimerState;
-  /** A fetch is in flight. The list stays on screen while it is. */
-  loading: boolean;
-  /** Why the last fetch failed, if it did. Stale issues are still shown. */
-  error: string | null;
-  fetchedAt: number;
-  /** False when another app already owns the hotkey, so Settings can say so. */
-  hotkeyRegistered: boolean;
+/**
+ * Every installed plugin's slice, by id.
+ *
+ * Listed rather than left as `Record<string, unknown>`: plugins are compiled in,
+ * so there is no reason to give up knowing their shapes. Adding a plugin means
+ * adding a line here, which is the intended amount of friction.
+ */
+export interface PluginSnapshots {
+  jira: JiraSnapshot;
+  github: GithubSnapshot;
 }
 
-export type ActionResult = { ok: true; message?: string } | { ok: false; error: string };
+export type PluginId = keyof PluginSnapshots & string;
+
+export interface Snapshot {
+  shell: ShellSnapshot;
+  plugins: PluginSnapshots;
+}
+
+export type { ActionResult, QueryResult };
 
 /** Everything `window.jt` exposes. Kept here so both sides typecheck against it. */
 export interface Bridge {
   getSnapshot(): Promise<Snapshot>;
   onSnapshot(fn: (snapshot: Snapshot) => void): () => void;
-  refresh(): Promise<ActionResult>;
 
-  start(key: string): Promise<ActionResult>;
-  stop(activity?: string): Promise<ActionResult>;
-  fileTime(key: string, activity: string): Promise<ActionResult>;
-  finish(key: string, transitionId?: string): Promise<ActionResult>;
-  transition(key: string, transitionId: string): Promise<ActionResult>;
-  relabel(key: string, from: string, to: string): Promise<ActionResult>;
-  discard(key: string, activity: string): Promise<ActionResult>;
+  /** Run something a plugin offers. The plugin decides what the arguments mean. */
+  invoke(plugin: string, command: string, args?: unknown[]): Promise<ActionResult>;
+  /** Ask a plugin for data — a transition list, say — rather than to do something. */
+  query(plugin: string, command: string, args?: unknown[]): Promise<QueryResult<unknown>>;
+  /** Re-read one plugin, or all of them. */
+  refresh(plugin?: string): Promise<ActionResult>;
+  savePluginConfig(plugin: string, patch: Record<string, unknown>): Promise<ActionResult>;
 
-  getTransitions(key: string): Promise<{ ok: true; transitions: JiraTransition[] } | { ok: false; error: string }>;
-  openIssue(key: string): Promise<void>;
-  /** Any http(s) link the app built — the JIRA home page, say. */
+  saveShellConfig(patch: Partial<ShellConfig>): Promise<ActionResult>;
+  saveLayout(layout: LayoutState): Promise<ActionResult>;
+
+  /** Any http(s) link a plugin built. */
   openUrl(url: string): Promise<void>;
   copy(text: string): Promise<void>;
-
-  saveConfig(patch: Partial<JiraConfig>): Promise<ActionResult>;
   setHeight(height: number): Promise<void>;
   /** Off while a form is open, so switching apps to copy a token doesn't lose it. */
   setDismissOnBlur(value: boolean): Promise<void>;

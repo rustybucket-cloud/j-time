@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { Snapshot } from '@shared/ipc';
+import type { JiraSnapshot } from '@shared/jira';
 import { groupByStage } from '@shared/stages';
 import { activeSeconds, formatClock, formatDurationShort } from '@shared/time';
 import { trackedByActivity } from '@shared/timer-logic';
@@ -17,7 +17,7 @@ export function Detail({
   issueKey,
   now,
 }: {
-  snapshot: Snapshot;
+  snapshot: JiraSnapshot;
   issueKey: string;
   now: number;
 }): ReactNode {

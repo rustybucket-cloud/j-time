@@ -1,13 +1,13 @@
 # j-time — notes for Claude
 
-A menu-bar JIRA timer with a Raycast-style command palette. Electron +
-TypeScript + React, vanilla CSS, no database, no auth, no state management
-library. Runs only on the user's machine.
+A menu-bar launcher with a Raycast-style command palette, hosting a plugin per
+app. Electron + TypeScript + React, vanilla CSS, no database, no auth, no state
+management library. Runs only on the user's machine.
 
-Ported from `../jira-timer`, a Next.js widget. Everything about *time* came
-across unchanged — the segment model, the three grouping functions, every
-rounding rule. What changed is the shell: no server, no browser tab, no
-environment variables.
+Two plugins ship: **jira** (the board, and the timer) and **github** (pull
+requests). The JIRA half was the whole app until the shell grew plugins;
+everything about *time* is unchanged from that, and before that from
+`../jira-timer`.
 
 ## Commands
 
@@ -21,16 +21,65 @@ sh scripts/sandbox.sh   # the app against a mock JIRA, with scratch state
 
 ## The three processes, and what each is allowed to know
 
-- **main** owns everything: the config, the state file, the JIRA client, the
-  window and the menu bar. It is the only writer.
+- **main** owns everything: the config, the state file, every service client,
+  the window and the menu bar. It is the only writer.
 - **preload** exposes `window.jt`, typed by `Bridge` in `src/shared/ipc.ts`.
-  The API token never crosses it — `PublicConfig` replaces it with `hasToken`.
-- **renderer** renders a `Snapshot` and sends back intents. It never talks to
-  JIRA and never touches disk.
+  No credential ever crosses it — each plugin's public config replaces its
+  secret with `hasToken`.
+- **renderer** renders a `Snapshot` and sends back intents. It never talks to a
+  service and never touches disk.
 
 `src/shared/` is imported by both sides *and* by the tests, so nothing in it may
 import `electron`. That's the same constraint `lib/jira.ts`'s `import
 'server-only'` enforced in the original, arrived at from the other direction.
+
+## Shell and plugins
+
+The split, in one line each:
+
+- `src/main/shell.ts` — the registry. One owner of the config file, the
+  snapshot, the polling and the staleness rule. Knows nothing about worklogs or
+  pull requests.
+- `src/main/plugin.ts` — the main-side contract. `snapshot()`, `refresh()`,
+  `commands`, `queries`, and optionally `menuBar()` / `trayMenu()`.
+- `src/shared/plugin.ts` — what a plugin may put on screen: `Row`, `Badge`,
+  `Glyph`, `Ctx`, `PluginView`.
+- `src/shared/sections.ts` — the root list: sections, subsections, pinning, the
+  top hit, and cursor movement. Pure and tested.
+- `src/shared/layout.ts` — the user's arrangement. Pure and tested.
+- `src/{main,renderer}/plugins/<id>/` — one plugin, two halves.
+
+**Adding a plugin is four edits**: `src/main/plugins/index.ts`,
+`src/renderer/plugins/index.ts`, a line in `PluginSnapshots` in
+`shared/ipc.ts`, and the plugin's own directory. That `PluginSnapshots` line is
+deliberate friction — plugins are compiled in, so there is no reason to give up
+knowing their shapes.
+
+**Rows are data, not markup.** A `lead` is a *meaning* (`attention`, `blocked`,
+`ok`) and an accessory is a `Badge`, so a PR waiting on you and a chunk of
+unfiled time look the same without either plugin having picked a colour. One
+place — `components/List.tsx` — decides what a meaning looks like. A plugin that
+could return arbitrary JSX would undo the design tokens in an afternoon. The two
+places a plugin *does* return React are `screen()` and `settings()`, which are
+full screens rather than list rows and answer to nothing else on the page.
+
+**Rows carry closures, not serialisable commands.** That's what keeps the
+builders as direct as they were when there was only a board to draw, and it is
+the thing that would have to change first for runtime-loaded third-party
+plugins: a closure can't cross the bridge.
+
+**Commands are addressed by plugin and name.** `window.jt.invoke('jira',
+'start', [key])` — untyped at the seam, because it has to carry any plugin's
+verbs. The argument names come back one layer up, in each plugin's
+`plugins/<id>/client.ts`. Don't add named methods to `Bridge` for a plugin's
+verbs; that list is what stopped scaling at the second plugin.
+
+**The shell owns the two fetch rules, for everybody.** A fetch in flight leaves
+the previous rows on screen; a failed one leaves them there too and puts the
+message on that section's header. `refreshPlugin` also skips a plugin that isn't
+configured — an app with no credentials is unset, not broken, and reporting it
+as a fetch failure paints a red error on a section whose real problem is that
+nobody filled its form in.
 
 ## The one important design rule
 
@@ -99,26 +148,47 @@ left every finished story permanently reading "Unlabelled". `discardUnlogged`
 
 ## The palette
 
-**Ranking lives in `shared/palette.ts` and is tested there.** The renderer draws
-what it returns. Two rules the tests pin down:
+**Ranking lives in `shared/palette.ts`; arranging lives in `shared/sections.ts`.**
+Both are pure and tested there, and the renderer draws what they return. The
+rules the tests pin down:
 
-- **An empty query keeps the caller's order.** That order is the board's own.
-  Reshuffling the default view undoes the one thing the app makes glanceable.
+- **An empty query keeps the caller's order** — inside a section that's the
+  plugin's order, and between sections it's the user's. Reshuffling the default
+  view undoes the one thing the app makes glanceable.
 - **Ties fall back to the original index**, so the list can't jitter between
   keystrokes.
+- **Typing sorts within a section and never moves the sections.** The
+  arrangement is what the user set up; dissolving it the moment they search
+  would make it useless exactly when they need it. What typing does instead is
+  hoist the single best match into **Top hit** — and only when it isn't already
+  the first row, or the heading would be announcing nothing.
+- **A collapsed section auto-expands when the query finds something in it**,
+  because one that silently swallowed the only match reads as "no results".
+- **A section with no matches disappears; an empty one with no query does not.**
+  A header reading "Not set up" is how you find out a plugin exists at all.
 
-**In Progress leads, and the running story is pinned above it in its own
-section.** The question the hotkey answers is "which of the things I'm in the
-middle of am I about to work on". The running story is pinned rather than sorted
-in place, so it keeps its column identity in the section label.
+**Pinning is the shell's, and capped at one row per plugin.** JIRA pins the
+running story, the PR section pins the review that has waited longest, and the
+user can switch either off. Uncapped, a plugin that pinned everything would
+simply be first. Pinned rows lose their own subsection headings on the way up —
+carrying "In Progress" and "Needs your review" with them turned a two-row
+section into four lines of heading.
+
+**Section headers are selectable rows.** That is what makes collapsing (`↩`,
+`←`/`→`) and reordering (`⌘↑`/`⌘↓`) reachable from the keyboard, and it is
+where the cursor goes when the section under it closes — the one thing on
+screen that certainly still exists.
 
 **Selection is an id, not an index.** Filtering must not slide the cursor onto
 whatever moved into the selected slot; a row that filters away hands the cursor
 to the top.
 
-**Every level of the palette is the same `Entry` list.** Issues, per-issue
+**Every level of the palette is the same `Row` list.** Issues, PRs, per-row
 actions, activity pickers and transition pickers all share one shape and one
 component, which is what makes the keys mean the same thing everywhere.
+Overlays go through `buildOverlay`, which is the same view with no headings —
+a picker is already the answer to "which of these", so there is nothing for the
+user's arrangement to say about it.
 
 ## Things that will bite you
 
@@ -143,6 +213,19 @@ already typed every single time. `setDismissOnBlur(false)` while the form is ope
 config fields in `~/.j-time/config.json` rather than env vars, and why
 `missingCreds` takes a config object rather than `process.env`.
 
+**config.json holds a section per plugin, and migrates itself.** A file written
+before the shell had plugins is one flat JIRA object with the hotkey mixed in;
+`migrate()` in `store.ts` recognises it by the absence of a `plugins` key and
+wraps it. It is somebody's real credentials — asking them to paste an API token
+again because the app grew a second plugin would be a poor trade. A section
+belonging to a plugin that isn't installed this launch is carried through
+untouched, for the same reason.
+
+**Secrets are declared, not guessed.** Each plugin lists its credential fields
+in `secrets`; the store encrypts those under `<field>Enc` and nothing else. The
+plaintext fallback for machines with no keychain is why the file mode matters as
+much as the encryption.
+
 **State is written atomically, and owner-only.** `writeAtomic` renames a temp file
 into place, so a quit mid-write leaves either the old state or the new one — it's
 the user's real tracked time and there is no other copy. Both files are `0600` in
@@ -155,14 +238,22 @@ would be the worse failure. The `chmod` on the temp file isn't redundant either:
 **A stale instance makes every later launch a silent no-op.**
 `requestSingleInstanceLock` means a second copy calls `app.quit()` immediately —
 no window, no JIRA request, no error, and `scripts/sandbox.sh` still prints
-`wrote …`. `npm run dev` leaves exactly such an instance behind. If a sandbox run
-seems to do nothing at all, `pgrep -fl j-time/node_modules` before debugging
-anything else.
+`wrote …`. `npm run dev` leaves exactly such an instance behind, and so does the
+*installed* app from `release/`, which `pgrep -fl j-time/node_modules` does not
+match — use `ps aux | grep -i j.time`.
+
+The lock is keyed on `userData`, so `JT_HOME` now redirects that too
+(`$JT_HOME/chromium`). A sandbox run no longer collides with a real j-time
+sitting in the menu bar, which it silently did before.
 
 **State mutations are serialised through `serial()` in `data.ts`.** Read-modify-
 write on `state` isn't atomic across an `await`, and filing saves twice on purpose
 (labelled first, marked logged only after JIRA accepts). Two overlapping actions
 would interleave and lose a segment.
+
+**`state.json` stays exactly where it is.** It belongs to the JIRA plugin now,
+but it is the one file in the app with no second copy, so it did not move house
+for a refactor.
 
 **`~/.j-time`, never `~/.jira-timer`.** Sharing the state file with an always-on
 jira-timer means two unlocked writers. That was a deliberate choice, not an
@@ -178,7 +269,14 @@ down.
 
 **A failed fetch keeps the previous issues on screen.** A dropped VPN shouldn't
 blank a list you're about to act on, and every action except the two that call
-JIRA works fine against stale rows.
+JIRA works fine against stale rows. This is the shell's guarantee now, and it
+applies per section: one plugin failing leaves the others live.
+
+**GitHub is GraphQL, not REST search.** `reviewDecision` and the check rollup
+don't exist on REST's issue search results, and those two things are most of
+what the PR section is *for* — REST would mean one search plus an N+1 of per-PR
+requests. A GraphQL error arrives with HTTP 200 and a body full of `errors`, so
+checking the status is not enough.
 
 **JIRA's Done category includes cancellation.** Most boards have both `Done` and
 `Cancelled` in `statusCategory = done`, and `/transitions` doesn't guarantee an
@@ -214,11 +312,20 @@ reach for it.
 ## Testing
 
 `npm test` covers pure logic only: `time`, `timer-logic`, `activities`, `stages`,
-`conn`, `worklog`, `palette`, `keys`. There are no component or IPC tests — if you
-add a feature with real logic in it, put that logic in `src/shared/` and test it
-there rather than reaching for a rendering harness. `palette.ts` is the worked
-example: ranking, sectioning and selection movement are all pure and all tested,
-leaving the renderer to draw what they return.
+`conn`, `worklog`, `palette`, `board`, `sections`, `layout`, `prs`, `keys`. There
+are no component or IPC tests — if you add a feature with real logic in it, put
+that logic in `src/shared/` and test it there rather than reaching for a
+rendering harness.
+
+`sections.ts` is the worked example, and the reason the plugin shell was worth
+doing this way: ranking, pinning, the top hit, collapse and cursor movement are
+all pure functions with tests, leaving the renderer to draw what they return.
+`layout.ts` is the same for the user's arrangement. A new plugin's *ordering*
+belongs in `shared/` next to `prs.ts`; only the mapping onto rows belongs in
+`renderer/plugins/`.
+
+`scripts/sandbox.sh` runs the app against both mocks — `mock-jira.mjs` and
+`mock-github.mjs` — with a scratch `JT_HOME`.
 
 **For the UI itself, screenshot it.** A borderless always-on-top overlay can't be
 pointed at with a normal screenshot tool. `JT_CAPTURE=path.png` shows the panel,

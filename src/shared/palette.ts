@@ -6,10 +6,6 @@
  * draws what these functions return.
  */
 
-import { activeSeconds, isRunning } from './time';
-import type { StageGroups, StageRow } from './stages';
-import { unloggedSeconds } from './timer-logic';
-
 /** Anything the palette can list. `id` must be unique across the whole list. */
 export interface Searchable {
   id: string;
@@ -130,73 +126,4 @@ export function nextIndex(length: number, current: number, delta: number): numbe
   if (length <= 0) return -1;
   const from = current < 0 ? (delta > 0 ? -1 : 0) : current;
   return (((from + delta) % length) + length) % length;
-}
-
-export const SECTION_RUNNING = 'Running';
-export const SECTION_LABELS = {
-  doing: 'In Progress',
-  todo: 'To Do',
-  done: 'Done',
-  elsewhere: 'Tracked elsewhere',
-} as const;
-
-export interface IssueItem extends Searchable {
-  kind: 'issue';
-  row: StageRow;
-  section: string;
-  running: boolean;
-  /** Every second this app has measured against the story. */
-  trackedSeconds: number;
-  /** Tracked time no worklog covers yet — what filing or Done would still send. */
-  unloggedSeconds: number;
-}
-
-/**
- * The board, flattened into one ranked-and-sectioned list.
- *
- * In Progress leads because it is the reason this app opens on a keystroke: the
- * question being answered is "which of the things I'm in the middle of am I about
- * to work on". To Do follows, then Done, then stories the current board no longer
- * lists. The running story is lifted into its own section at the very top — it is
- * the one row whose state changes while you're looking at it.
- */
-export function buildIssueItems(groups: StageGroups, now: number): IssueItem[] {
-  const order: (keyof typeof SECTION_LABELS)[] = ['doing', 'todo', 'done', 'elsewhere'];
-  const items: IssueItem[] = [];
-
-  for (const stage of order) {
-    for (const row of groups[stage]) {
-      const timer = row.timer;
-      const running = timer ? isRunning(timer.segments) : false;
-      items.push({
-        kind: 'issue',
-        id: `issue:${row.key}`,
-        title: row.key,
-        subtitle: row.summary,
-        keywords: [row.status, row.boardName ?? '', row.assignee ?? ''].filter(Boolean),
-        row,
-        section: running ? SECTION_RUNNING : SECTION_LABELS[stage],
-        running,
-        trackedSeconds: timer ? activeSeconds(timer.segments, now) : 0,
-        unloggedSeconds: timer ? unloggedSeconds(timer, now) : 0,
-      });
-    }
-  }
-
-  // Pinned rather than sorted in place, so a story keeps its column identity in
-  // the label while still being the first thing under the cursor.
-  return [...items.filter((i) => i.running), ...items.filter((i) => !i.running)];
-}
-
-/** Group an already-ordered list into contiguous runs, for section headings. */
-export function sectioned<T extends { section: string }>(
-  ranked: { item: T }[],
-): { section: string; items: { item: T }[] }[] {
-  const out: { section: string; items: { item: T }[] }[] = [];
-  for (const entry of ranked) {
-    const last = out[out.length - 1];
-    if (last && last.section === entry.item.section) last.items.push(entry);
-    else out.push({ section: entry.item.section, items: [entry] });
-  }
-  return out;
 }

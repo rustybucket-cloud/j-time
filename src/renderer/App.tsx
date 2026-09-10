@@ -1,22 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { filterPalette, nextIndex } from '@shared/palette';
-import { connDotClass, connMessage } from '@shared/conn';
-import type { Snapshot } from '@shared/ipc';
-import { prettyAccelerator } from '@shared/keys';
-import { activeSeconds, formatClock } from '@shared/time';
+import type { Overlay, PluginScreen, Row, Ctx } from '@shared/plugin';
+import type { Snapshot, PluginId } from '@shared/ipc';
+import { moveSection, resolveLayout, toggleCollapsed } from '@shared/layout';
 import {
-  appMenuEntries,
-  commandEntries,
-  issueEntries,
-  runningRow,
-  type Ctx,
-  type Entry,
-  type Overlay,
-  type Screen,
-} from './entries';
+  buildOverlay,
+  buildPalette,
+  findEntry,
+  firstSelectable,
+  headerId,
+  moveSelection,
+  type PaletteRow,
+  type SectionInput,
+} from '@shared/sections';
+import { prettyAccelerator } from '@shared/keys';
+import { VIEWS } from './plugins';
+import { appCommands, COMMANDS_SECTION } from './commands';
 import { List } from './components/List';
-import { Detail } from './components/Detail';
-import { Settings } from './components/Settings';
+import { ShellSettings } from './components/ShellSettings';
 import { useAutoHeight, useNow, useReopened, useSnapshot } from './hooks';
 
 interface Toast {
@@ -27,14 +27,11 @@ interface Toast {
   transient?: boolean;
 }
 
-/** ⌘-shortcuts that run one of the selected story's actions by id. */
-const ACTION_SHORTCUTS: Record<string, string> = {
-  f: 'act:file',
-  d: 'act:finish',
-  i: 'act:detail',
-  o: 'act:open',
-  c: 'act:copy-key',
-};
+/** `plugin: ''` is the shell's own settings; a plugin id is that plugin's form. */
+type Screen =
+  | { kind: 'list' }
+  | { kind: 'settings'; plugin: string }
+  | { kind: 'plugin'; screen: PluginScreen };
 
 export function App(): ReactNode {
   const snapshot = useSnapshot();
@@ -62,13 +59,20 @@ export function App(): ReactNode {
   /**
    * Back to a clean palette — what reopening, and finishing an action, both want.
    *
-   * Unconfigured, that means Settings rather than the list. Nothing works without
-   * credentials, and an empty list pointing at a shortcut is a worse first
-   * impression than the form it points to.
+   * With nothing set up at all that means a settings form rather than a list of
+   * empty sections. It opens the first plugin's own form rather than the shell's:
+   * the shell's page is an arrangement editor, and what a new user needs is
+   * somewhere to paste a token.
    */
   const reset = useCallback(() => {
     const current = latest.current;
-    setScreen(current?.conn.reason === 'unconfigured' ? { kind: 'settings' } : { kind: 'list' });
+    const plugins = current?.shell.plugins ?? [];
+    const anyConfigured = plugins.some((p) => p.configured);
+    setScreen(
+      !anyConfigured && plugins.length > 0
+        ? { kind: 'settings', plugin: plugins[0].id }
+        : { kind: 'list' },
+    );
     setOverlays([]);
     setQuery('');
     setSelectedId(null);
@@ -81,12 +85,13 @@ export function App(): ReactNode {
   const greeted = useRef(false);
   useEffect(() => {
     if (greeted.current || !snapshot) return;
-    // `checking` is not an answer yet, so don't spend the one greeting on it:
-    // the panel opens before the first getMyself lands, and an unconfigured user
-    // would then never be shown the form.
-    if (snapshot.conn.reason === 'checking') return;
+    // Not until the config file has actually been read: before that every plugin
+    // reports as unconfigured, and spending the one greeting on that would send
+    // a perfectly well set up user to a form.
+    const { loaded, plugins } = snapshot.shell;
+    if (!loaded || plugins.length === 0) return;
     greeted.current = true;
-    if (snapshot.conn.reason === 'unconfigured') setScreen({ kind: 'settings' });
+    if (!plugins.some((p) => p.configured)) setScreen({ kind: 'settings', plugin: plugins[0].id });
   }, [snapshot]);
 
   // Settings is a form, and a form that vanishes when you switch apps to copy
@@ -134,67 +139,140 @@ export function App(): ReactNode {
       }
     };
     return {
-      snapshot,
       now,
-      act: (fn) => void fn().then((r) => finish(r, false), (e: Error) => finish({ ok: false, error: e.message }, false)),
-      actStay: (fn) => void fn().then((r) => finish(r, true), (e: Error) => finish({ ok: false, error: e.message }, true)),
+      act: (fn) =>
+        void fn().then(
+          (r) => finish(r, false),
+          (e: Error) => finish({ ok: false, error: e.message }, false),
+        ),
+      actStay: (fn) =>
+        void fn().then(
+          (r) => finish(r, true),
+          (e: Error) => finish({ ok: false, error: e.message }, true),
+        ),
       push: (next) => setOverlays((stack) => [...stack, next]),
       pushAsync: (title, placeholder, load) => {
         setToast({ text: `${title}…` });
         void load().then(
-          (entries) => {
+          (rows) => {
             setToast(null);
-            setOverlays((stack) => [...stack, { title, placeholder, entries }]);
+            setOverlays((stack) => [...stack, { title, placeholder, rows }]);
           },
           (e: Error) => setToast({ text: e.message, bad: true }),
         );
       },
-      go: (next) => {
+      open: (next) => {
         setOverlays([]);
-        setScreen(next);
+        setScreen({ kind: 'plugin', screen: next });
+      },
+      openSettings: (plugin) => {
+        setOverlays([]);
+        setScreen({ kind: 'settings', plugin });
       },
     };
   }, [snapshot, now, reset]);
 
-  const entries: Entry[] = useMemo(() => {
-    if (!ctx) return [];
-    if (overlay) return overlay.entries;
-    if (screen.kind !== 'list') return [];
-    return [...issueEntries(ctx), ...commandEntries(ctx)];
-  }, [ctx, overlay, screen.kind]);
+  const layout = snapshot?.shell.layout;
+  const pluginIds = useMemo(
+    () => (snapshot?.shell.plugins ?? []).map((p) => p.id),
+    [snapshot?.shell.plugins],
+  );
 
-  const ranked = useMemo(() => filterPalette(entries, query), [entries, query]);
+  /**
+   * Every section, in the user's order.
+   *
+   * The commands section is appended rather than arranged: it is the app's own
+   * menu rather than one of the apps, so it stays last. It still collapses —
+   * `layout.collapsed` takes any id — it just can't be moved above a plugin.
+   */
+  const sections: SectionInput[] = useMemo(() => {
+    if (!snapshot || !ctx || !layout) return [];
+    const out: SectionInput[] = [];
+
+    for (const { id, collapsed, pins } of resolveLayout(layout, pluginIds)) {
+      const view = VIEWS[id as PluginId];
+      const meta = snapshot.shell.plugins.find((p) => p.id === id);
+      if (!view || !meta) continue;
+      const content = view.section(snapshot.plugins[id as PluginId] as never, ctx);
+      out.push({
+        id,
+        title: view.title,
+        rows: content.rows,
+        collapsed,
+        pins,
+        // A fetch in flight says so on the section it is fetching, and a failure
+        // stays on that section — the other sections are still good.
+        note: meta.loading ? 'Refreshing…' : content.note,
+        error: meta.error ?? content.error ?? null,
+      });
+    }
+
+    const commands: Row[] = [
+      ...out.flatMap((section) => {
+        const view = VIEWS[section.id as PluginId];
+        return view?.commands?.(snapshot.plugins[section.id as PluginId] as never, ctx) ?? [];
+      }),
+      ...appCommands(ctx),
+    ];
+    out.push({
+      id: COMMANDS_SECTION,
+      title: 'j-time',
+      rows: commands,
+      collapsed: layout.collapsed.includes(COMMANDS_SECTION),
+      pins: false,
+    });
+
+    return out;
+  }, [snapshot, ctx, layout, pluginIds]);
+
+  const view = useMemo(
+    () => (overlay ? buildOverlay(overlay.rows, query) : buildPalette(sections, query)),
+    [overlay, sections, query],
+  );
 
   // Selection follows the list rather than an index: filtering shouldn't move the
   // cursor off the row you were aiming at, and a row that filters away should
   // hand the cursor to the top rather than to whatever slid into its slot.
-  const selectedIndex = ranked.findIndex((r) => r.item.id === selectedId);
-  const index = selectedIndex >= 0 ? selectedIndex : ranked.length > 0 ? 0 : -1;
-  const selected = index >= 0 ? ranked[index].item : null;
+  const current = findEntry(view, selectedId) ?? findEntry(view, firstSelectable(view));
+  const selectedRow = current?.kind === 'row' ? current : null;
 
-  const move = (delta: number) => {
-    const next = nextIndex(ranked.length, index, delta);
-    setSelectedId(next >= 0 ? ranked[next].item.id : null);
+  const move = (delta: number) => setSelectedId(moveSelection(view, current?.id ?? null, delta));
+
+  const toggle = (sectionId: string) => {
+    if (!layout) return;
+    void window.jt.saveLayout(toggleCollapsed(layout, sectionId));
+    // The cursor lands on the header, which is the one thing that certainly
+    // still exists once the rows under it are gone.
+    setSelectedId(headerId(sectionId));
+  };
+
+  const reorder = (sectionId: string, delta: number) => {
+    if (!layout || sectionId === COMMANDS_SECTION) return;
+    void window.jt.saveLayout(moveSection(layout, pluginIds, sectionId, delta));
+    setSelectedId(headerId(sectionId));
   };
 
   /**
    * The action list for a row, which is what ⌘K opens — and what a click does.
    *
-   * Returns false when the row has none, so the caller can fall back to running
-   * it: the command rows and every picker level are single-purpose, and a click
-   * that drilled into nothing would leave them dead to the mouse.
+   * Returns false when there is nothing to open, so the caller can fall back to
+   * running the row: the command rows and every picker level are single-purpose,
+   * and a click that drilled into nothing would leave them dead to the mouse.
    */
-  const openActions = (entry: Entry): boolean => {
-    if (!entry.actions?.length) return false;
-    ctx?.push({
-      title: entry.title,
-      placeholder: `Actions for ${entry.title}`,
-      entries: entry.actions,
-    });
+  const openActions = (rows: Row[] | undefined, title: string): boolean => {
+    if (!rows?.length) return false;
+    ctx?.push({ title, placeholder: `Actions for ${title}`, rows });
     return true;
   };
 
-  const menuEntries = useMemo(() => (ctx ? appMenuEntries(ctx) : []), [ctx]);
+  /** ⌘K on a section header opens that section's own commands. */
+  const sectionActions = (sectionId: string): Row[] => {
+    if (!snapshot || !ctx) return [];
+    const view = VIEWS[sectionId as PluginId];
+    return view?.section(snapshot.plugins[sectionId as PluginId] as never, ctx).actions ?? [];
+  };
+
+  const menuRows = useMemo(() => (ctx ? appCommands(ctx) : []), [ctx]);
 
   const back = () => {
     if (overlays.length > 0) setOverlays((stack) => stack.slice(0, -1));
@@ -213,17 +291,22 @@ export function App(): ReactNode {
         setMenu(null);
         return;
       }
-      if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || (e.ctrlKey && 'np'.includes(e.key.toLowerCase()))) {
+      if (
+        e.key === 'ArrowDown' ||
+        e.key === 'ArrowUp' ||
+        (e.ctrlKey && 'np'.includes(e.key.toLowerCase()))
+      ) {
         e.preventDefault();
         const delta = e.key === 'ArrowUp' || e.key.toLowerCase() === 'p' ? -1 : 1;
-        setMenu(nextIndex(menuEntries.length, menu, delta));
+        const length = menuRows.length;
+        setMenu((((menu + delta) % length) + length) % length);
         return;
       }
       if (e.key === 'Enter') {
         e.preventDefault();
-        const entry = menuEntries[menu];
+        const row = menuRows[menu];
         setMenu(null);
-        entry?.run();
+        row?.run();
         return;
       }
     }
@@ -240,7 +323,7 @@ export function App(): ReactNode {
     }
     if (meta && e.key === ',') {
       e.preventDefault();
-      ctx?.go({ kind: 'settings' });
+      ctx?.openSettings('');
       return;
     }
     if (meta && e.key.toLowerCase() === 'r') {
@@ -260,9 +343,30 @@ export function App(): ReactNode {
       move(-1);
       return;
     }
+
+    // Section arrangement, from the keyboard. ⌘↑/⌘↓ moves the section the cursor
+    // is in; the bare arrows collapse and expand it.
+    if (current && !overlay) {
+      const sectionId = current.sectionId;
+      const fixed = current.kind === 'header' && current.fixed;
+      if (meta && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        e.preventDefault();
+        if (!fixed) reorder(sectionId, e.key === 'ArrowUp' ? -1 : 1);
+        return;
+      }
+      if (!fixed && (e.key === 'ArrowLeft' || e.key === 'ArrowRight') && query === '') {
+        e.preventDefault();
+        const collapsed = layout?.collapsed.includes(sectionId) ?? false;
+        if (collapsed === (e.key === 'ArrowLeft')) setSelectedId(headerId(sectionId));
+        else toggle(sectionId);
+        return;
+      }
+    }
+
     if (e.key === 'Enter') {
       e.preventDefault();
-      selected?.run();
+      if (current?.kind === 'header') toggle(current.sectionId);
+      else selectedRow?.row.run();
       return;
     }
     // Backspace on an empty query steps out of a sub-list, so getting somewhere by
@@ -274,12 +378,12 @@ export function App(): ReactNode {
     }
     if (meta && e.key.toLowerCase() === 'k') {
       e.preventDefault();
-      if (selected) openActions(selected);
+      if (current?.kind === 'header') openActions(sectionActions(current.sectionId), current.title);
+      else if (selectedRow) openActions(selectedRow.row.actions, selectedRow.row.title);
       return;
     }
-    const shortcut = meta ? ACTION_SHORTCUTS[e.key.toLowerCase()] : undefined;
-    if (shortcut) {
-      const action = selected?.actions?.find((a) => a.id === shortcut);
+    if (meta && selectedRow) {
+      const action = selectedRow.row.actions?.find((a) => a.shortcut === e.key.toLowerCase());
       if (action) {
         e.preventDefault();
         action.run();
@@ -291,27 +395,28 @@ export function App(): ReactNode {
     return (
       <div className="panel" ref={root}>
         <div className="search">
-          <span className="glyph"><SearchGlyph /></span>
+          <span className="glyph">
+            <SearchGlyph />
+          </span>
           <input placeholder="Starting up…" readOnly />
         </div>
       </div>
     );
   }
 
-  const running = runningRow(snapshot);
-  const runningSeconds = running?.timer ? activeSeconds(running.timer.segments, now) : 0;
+  const settingsView = screen.kind === 'settings' ? VIEWS[screen.plugin as PluginId] : undefined;
+  const pluginScreen =
+    screen.kind === 'plugin' ? VIEWS[screen.screen.plugin as PluginId] : undefined;
 
   const placeholder = overlay
     ? overlay.placeholder
     : screen.kind === 'settings'
       ? 'Settings'
-      : screen.kind === 'detail'
-        ? screen.key
-        : snapshot.conn.ok
-          ? 'Search your in-progress work…'
-          : snapshot.conn.reason === 'checking'
-            ? 'Checking your JIRA connection…'
-            : 'Not connected — press ⌘, to set up';
+      : screen.kind === 'plugin'
+        ? (screen.screen.arg ?? screen.screen.view)
+        : 'Search your work…';
+
+  const anyLoading = snapshot.shell.plugins.some((p) => p.loading);
 
   return (
     <div className="panel" ref={root} onKeyDown={onKeyDown}>
@@ -344,25 +449,41 @@ export function App(): ReactNode {
           readOnly={screen.kind !== 'list'}
           onChange={(e) => setQuery(e.target.value)}
         />
-        {snapshot.loading && <span className="pill">Refreshing…</span>}
+        {anyLoading && <span className="pill">Refreshing…</span>}
       </div>
       <div className="divider" />
 
       {screen.kind === 'settings' ? (
-        <Settings snapshot={snapshot} onSaved={(text) => setToast({ text })} />
-      ) : screen.kind === 'detail' ? (
-        <Detail snapshot={snapshot} issueKey={screen.key} now={now} />
+        settingsView?.settings ? (
+          settingsView.settings(snapshot.plugins[screen.plugin as PluginId] as never, (text) =>
+            setToast({ text }),
+          )
+        ) : (
+          <ShellSettings
+            snapshot={snapshot}
+            onSaved={(text) => setToast({ text })}
+            onConfigure={(plugin) => setScreen({ kind: 'settings', plugin })}
+          />
+        )
+      ) : screen.kind === 'plugin' ? (
+        (pluginScreen?.screen?.(
+          snapshot.plugins[screen.screen.plugin as PluginId] as never,
+          ctx,
+          screen.screen.view,
+          screen.screen.arg,
+        ) ?? <div className="empty">Nothing to show.</div>)
       ) : (
         <List
-          ranked={ranked}
-          selectedId={selected?.id ?? null}
+          view={view}
+          selectedId={current?.id ?? null}
           onSelect={setSelectedId}
+          onToggle={toggle}
           // A click opens the actions rather than running the row. Enter is a
           // deliberate keystroke on a row you moved the cursor to; a click is
           // one gesture at whatever is under the pointer, and having that put a
           // clock on a story — or take one off — is too much to hang on it.
-          onActivate={(entry) => {
-            if (!openActions(entry)) entry.run();
+          onActivate={(entry: PaletteRow) => {
+            if (!openActions(entry.row.actions, entry.row.title)) entry.row.run();
           }}
           empty={<EmptyState snapshot={snapshot} query={query} inOverlay={overlay !== null} />}
         />
@@ -374,9 +495,9 @@ export function App(): ReactNode {
               the menu doesn't also land on whatever is underneath it. */}
           <div className="scrim" onMouseDown={() => setMenu(null)} />
           <div className="app-menu-pop" role="menu">
-            {menuEntries.map((entry, i) => (
+            {menuRows.map((row, i) => (
               <button
-                key={entry.id}
+                key={row.id}
                 type="button"
                 role="menuitem"
                 className={`app-menu-item${i === menu ? ' on' : ''}`}
@@ -384,11 +505,11 @@ export function App(): ReactNode {
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => {
                   setMenu(null);
-                  entry.run();
+                  row.run();
                 }}
               >
-                <span className="label">{entry.title}</span>
-                {entry.accessories}
+                <span className="label">{row.title}</span>
+                {row.badges?.[0] && <kbd>{row.badges[0].text}</kbd>}
               </button>
             ))}
           </div>
@@ -396,49 +517,107 @@ export function App(): ReactNode {
       )}
 
       <div className="divider" />
-      <div className="footer">
-        <button
-          type="button"
-          className="app-menu"
-          title="j-time"
-          aria-label="j-time menu"
-          // The search field owns the keyboard; letting the button take focus
-          // would send the palette's own keys nowhere.
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => setMenu((open) => (open === null ? 0 : null))}
-        >
-          <MenuGlyph />
-        </button>
-        <span className={`dot ${connDotClass(snapshot.conn)}`} />
-        {toast ? (
-          <span className={`toast${toast.bad ? ' bad' : ''}`}>{toast.text}</span>
-        ) : running ? (
-          <span>
-            {running.key} <span className="clock live">{formatClock(runningSeconds)}</span>
-          </span>
-        ) : (
-          <span>{snapshot.conn.ok ? prettyAccelerator(snapshot.config.hotkey) : connMessage(snapshot.conn)}</span>
-        )}
-        <span className="spacer" />
-        {screen.kind === 'list' && selected && (
-          <>
-            <span className="hint">
-              {selected.running ? 'Stop' : selected.issue ? 'Start' : 'Run'} <kbd>↩</kbd>
-            </span>
-            {selected.actions && (
-              <span className="hint">
-                Actions <kbd>⌘</kbd>
-                <kbd>K</kbd>
-              </span>
-            )}
-          </>
-        )}
-        {(screen.kind !== 'list' || overlays.length > 0) && (
+      <Footer
+        snapshot={snapshot}
+        toast={toast}
+        enterLabel={selectedRow?.row.enterLabel}
+        hasActions={Boolean(selectedRow?.row.actions?.length)}
+        onHeader={current?.kind === 'header' && !current.fixed}
+        showBack={screen.kind !== 'list' || overlays.length > 0}
+        inList={screen.kind === 'list'}
+        onMenu={() => setMenu((open) => (open === null ? 0 : null))}
+      />
+    </div>
+  );
+}
+
+/**
+ * The status line.
+ *
+ * The connection dot went with the JIRA plugin's monopoly on this app: with more
+ * than one connection there is no single dot to paint, so the footer counts the
+ * ones that are unhappy instead and stays quiet when they all are.
+ */
+function Footer({
+  snapshot,
+  toast,
+  enterLabel,
+  hasActions,
+  onHeader,
+  showBack,
+  inList,
+  onMenu,
+}: {
+  snapshot: Snapshot;
+  toast: Toast | null;
+  enterLabel?: string;
+  hasActions: boolean;
+  onHeader: boolean;
+  showBack: boolean;
+  inList: boolean;
+  onMenu: () => void;
+}): ReactNode {
+  const plugins = snapshot.shell.plugins;
+  // An app that is *broken* and an app that was never set up are different
+  // things, and only the first is worth painting red — a section you have no
+  // intention of configuring shouldn't make the whole app look unwell.
+  const broken = plugins.filter((p) => p.error);
+  const unset = plugins.filter((p) => !p.configured && !p.error);
+
+  const dot = broken.length > 0 ? 'bad' : plugins.some((p) => p.configured) ? 'ok' : '';
+  const status =
+    broken.length > 0
+      ? (broken[0].error ?? `${broken[0].title} failed`)
+      : unset.length === 1
+        ? `${unset[0].title} is not set up`
+        : unset.length > 1
+          ? `${unset.length} apps are not set up`
+          : prettyAccelerator(snapshot.shell.config.hotkey);
+
+  return (
+    <div className="footer">
+      <button
+        type="button"
+        className="app-menu"
+        title="j-time"
+        aria-label="j-time menu"
+        // The search field owns the keyboard; letting the button take focus
+        // would send the palette's own keys nowhere.
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={onMenu}
+      >
+        <MenuGlyph />
+      </button>
+      <span className={`dot ${dot}`} />
+      {toast ? <span className={`toast${toast.bad ? ' bad' : ''}`}>{toast.text}</span> : <span>{status}</span>}
+      <span className="spacer" />
+      {inList && onHeader && (
+        <>
           <span className="hint">
-            Back <kbd>⎋</kbd>
+            Collapse <kbd>↩</kbd>
           </span>
-        )}
-      </div>
+          <span className="hint">
+            Move <kbd>⌘</kbd>
+            <kbd>↕</kbd>
+          </span>
+        </>
+      )}
+      {inList && !onHeader && enterLabel && (
+        <span className="hint">
+          {enterLabel} <kbd>↩</kbd>
+        </span>
+      )}
+      {inList && !onHeader && hasActions && (
+        <span className="hint">
+          Actions <kbd>⌘</kbd>
+          <kbd>K</kbd>
+        </span>
+      )}
+      {showBack && (
+        <span className="hint">
+          Back <kbd>⎋</kbd>
+        </span>
+      )}
     </div>
   );
 }
@@ -452,30 +631,19 @@ function EmptyState({
   query: string;
   inOverlay: boolean;
 }): ReactNode {
-  if (snapshot.conn.reason === 'checking') return <strong>{connMessage(snapshot.conn)}</strong>;
-  if (!snapshot.conn.ok) {
-    return (
-      <>
-        <strong>{connMessage(snapshot.conn)}</strong>
-        Press ⌘, to open Settings.
-      </>
-    );
-  }
   if (query) {
     return (
       <>
         <strong>No matches for “{query}”</strong>
-        {inOverlay ? 'Press ⎋ to go back.' : 'Try an issue key, or part of a summary.'}
+        {inOverlay ? 'Press ⎋ to go back.' : 'Try an issue key, a repo, or part of a title.'}
       </>
     );
   }
-  if (snapshot.loading) return <strong>Loading your board…</strong>;
+  if (snapshot.shell.plugins.some((p) => p.loading)) return <strong>Loading…</strong>;
   return (
     <>
-      <strong>Nothing on this board</strong>
-      {snapshot.config.mineOnly
-        ? 'Nothing is assigned to you in the current iteration.'
-        : 'This board has no issues in the current iteration.'}
+      <strong>Nothing to show</strong>
+      Press ⌘, to set up an app.
     </>
   );
 }
