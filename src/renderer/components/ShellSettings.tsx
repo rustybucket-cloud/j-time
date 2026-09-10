@@ -71,7 +71,7 @@ export function ShellSettings({
         <label>Sections</label>
         <div className="note">
           The order the palette lists them in. A pinned row is one a section may lift
-          above the others — the running timer, or the review that has waited longest.
+          above the others — the running timer, say.
         </div>
         <div className="sections-editor">
           {sections.map((section, i) => (
