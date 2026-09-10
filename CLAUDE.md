@@ -292,6 +292,13 @@ the fetch for `browser.ts`, which reads the same two dashboard pages you would
 
 Four things about it, all load-bearing:
 
+- **The host means a different thing per kind, so it is coerced, not trusted.**
+  A token account's host is an API root; a browser account's is the site you
+  visit. An account switched from one to the other keeps whatever it had, and
+  `https://api.github.com/login` is a 404 rather than a sign-in page — so
+  `webHostFor` folds either kind back to the one a browser wants. Settings also
+  saves before signing in, because the main process signs into the *stored*
+  account and a button that used the pre-edit host was the actual bug.
 - **No new dependency.** j-time is already Electron. A hidden `BrowserWindow`
   on `persist:github-<accountId>` is the whole mechanism — no Playwright, no
   Chromium download, and the partition lands under `userData`, which `JT_HOME`

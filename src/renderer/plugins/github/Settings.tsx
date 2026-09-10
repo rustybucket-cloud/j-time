@@ -63,7 +63,7 @@ export function Settings({
   const setKind = (id: string, kind: GithubAuth) =>
     update(id, { kind, host: kind === 'browser' ? GITHUB_WEB : GITHUB_HOST, token: '' });
 
-  async function save(): Promise<void> {
+  async function save(): Promise<boolean> {
     setSaving(true);
     const result = await window.jt.savePluginConfig('github', {
       // A blank token means "leave the stored one alone" — the main process
@@ -77,6 +77,21 @@ export function Settings({
     });
     setSaving(false);
     onSaved(result.ok ? (result.message ?? 'Saved') : result.error);
+    return result.ok;
+  }
+
+  /**
+   * Save, then sign in.
+   *
+   * Not optional politeness: the main process signs into the *stored* account,
+   * so signing in from an unsaved form used the old host — and an account still
+   * carrying an API root sent people to `api.github.com/login`, which is a 404.
+   * The host is coerced now too, but the ordering is what makes the button mean
+   * what it looks like it means.
+   */
+  async function saveThenSignIn(id: string): Promise<void> {
+    if (!(await save())) return;
+    await window.jt.invoke('github', 'signIn', [id]);
   }
 
   return (
@@ -167,10 +182,7 @@ export function Settings({
               <div className="field">
                 <label>Session</label>
                 <div className="signin">
-                  <button
-                    type="button"
-                    onClick={() => void window.jt.invoke('github', 'signIn', [account.id])}
-                  >
+                  <button type="button" onClick={() => void saveThenSignIn(account.id)}>
                     {state?.needsSignIn === false && state.login
                       ? `Signed in as ${state.login} — sign in again`
                       : 'Sign in to GitHub…'}
@@ -183,10 +195,10 @@ export function Settings({
                   </button>
                 </div>
                 <div className="note">
-                  Opens the real GitHub login, so SSO and two-factor work exactly as they do
-                  in your browser. Save first if you’ve just changed the host. The session is
-                  kept for this account alone and never leaves your machine — it is a broader
-                  credential than a token, so sign out when you’re done with it.
+                  Saves, then opens the real GitHub login, so SSO and two-factor work exactly
+                  as they do in your browser. The session is kept for this account alone and
+                  never leaves your machine — it is a broader credential than a token, so
+                  sign out when you’re done with it.
                 </div>
               </div>
             )}

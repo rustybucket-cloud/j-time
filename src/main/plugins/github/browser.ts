@@ -20,7 +20,7 @@
 import { BrowserWindow, session, type Session } from 'electron';
 import type { GithubAccount } from '@shared/github';
 import { GITHUB_WEB } from '@shared/github';
-import { parsePullUrl, PULLS_QUERIES, pullsUrl, type PullRequest } from '@shared/prs';
+import { parsePullUrl, PULLS_QUERIES, pullsUrl, webHostFor, type PullRequest } from '@shared/prs';
 import type { GithubResult } from './client';
 
 /** A page that hasn't answered by now isn't going to. */
@@ -86,8 +86,16 @@ export function sessionFor(account: GithubAccount): Session {
   return session.fromPartition(`persist:github-${account.id}`);
 }
 
+/**
+ * The site to load pages from.
+ *
+ * Coerced rather than trusted: an account switched from token to browser can
+ * still be carrying `https://api.github.com`, and that host's `/login` is a 404
+ * rather than a sign-in page — which is exactly how this went wrong the first
+ * time. `webHostFor` folds either kind of host back to the one a browser wants.
+ */
 function webHost(account: GithubAccount): string {
-  return account.host.trim().replace(/\/+$/, '') || GITHUB_WEB;
+  return account.host.trim() ? webHostFor(account.host) : GITHUB_WEB;
 }
 
 /** GitHub sends you here when the session is gone. */

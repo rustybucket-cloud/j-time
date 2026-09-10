@@ -11,6 +11,7 @@ import {
   prBadges,
   prGlyph,
   pullsUrl,
+  webHostFor,
   type PullRequest,
 } from './prs';
 
@@ -270,5 +271,24 @@ describe('pullsUrl', () => {
   it('tolerates a trailing slash and an empty host', () => {
     expect(pullsUrl('https://git.example.com/', 'x')).toBe('https://git.example.com/pulls?q=x');
     expect(pullsUrl('', 'x')).toBe('https://github.com/pulls?q=x');
+  });
+});
+
+describe('webHostFor', () => {
+  // An account switched from token to browser can still be carrying an API
+  // root, and https://api.github.com/login is a 404, not a sign-in page.
+  it('folds an API root back to the site a browser visits', () => {
+    expect(webHostFor('https://api.github.com')).toBe('https://github.com');
+    expect(webHostFor('https://git.example.com/api')).toBe('https://git.example.com');
+  });
+
+  it('leaves a web host alone', () => {
+    expect(webHostFor('https://github.com')).toBe('https://github.com');
+    expect(webHostFor('https://git.example.com')).toBe('https://git.example.com');
+  });
+
+  it('tolerates a trailing slash, and falls back rather than build a 404', () => {
+    expect(webHostFor('https://github.com/')).toBe('https://github.com');
+    expect(webHostFor('nonsense')).toBe('https://github.com');
   });
 });

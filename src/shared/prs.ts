@@ -159,24 +159,32 @@ export function unauthorizedOrgs(memberships: string[], visible: string[]): stri
 }
 
 /**
- * Where to go to authorise a token for an org.
+ * The host a browser goes to, given either kind of host.
  *
- * Built from the *web* host, which the API host is not: github.com's API lives
- * on `api.github.com`, while an Enterprise install puts it under `/api` on the
- * company's own domain. Both fold back to the same origin the browser wants.
+ * The API host is not the web host: github.com's API lives on `api.github.com`,
+ * while an Enterprise install puts it under `/api` on the company's own domain.
+ * Both fold back to the origin a person would visit.
+ *
+ * It accepts a web host unchanged, which is the point — an account switched
+ * from token to browser may still be carrying an API root, and
+ * `https://api.github.com/login` is a 404 rather than a sign-in page. Coercing
+ * here means a stale host self-corrects instead of dead-ending.
  */
-export function ssoAuthorizeUrl(apiHost: string, org: string): string {
-  const trimmed = apiHost.trim().replace(/\/+$/, '');
-  let web: string;
+export function webHostFor(host: string): string {
+  const trimmed = host.trim().replace(/\/+$/, '');
   try {
     const url = new URL(trimmed);
     url.hostname = url.hostname.replace(/^api\./, '');
     url.pathname = url.pathname.replace(/\/api$/, '');
-    web = url.origin + (url.pathname === '/' ? '' : url.pathname);
+    return url.origin + (url.pathname === '/' ? '' : url.pathname);
   } catch {
-    web = 'https://github.com';
+    return 'https://github.com';
   }
-  return `${web}/orgs/${encodeURIComponent(org)}/sso`;
+}
+
+/** Where to go to authorise a token for an org. */
+export function ssoAuthorizeUrl(apiHost: string, org: string): string {
+  return `${webHostFor(apiHost)}/orgs/${encodeURIComponent(org)}/sso`;
 }
 
 /**
