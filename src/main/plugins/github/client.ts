@@ -12,6 +12,7 @@
  */
 
 import type { CheckState, PullRequest, ReviewDecision } from '@shared/prs';
+import { unauthorizedOrgs } from '@shared/prs';
 import type { GithubConfig } from '@shared/github';
 
 const PR_FIELDS = `
@@ -28,7 +29,7 @@ const PR_FIELDS = `
 
 const QUERY = `
 query($review: String!, $mine: String!, $limit: Int!) {
-  viewer { login }
+  viewer { login organizations(first: 100) { nodes { login } } }
   review: search(query: $review, type: ISSUE, first: $limit) {
     nodes { ... on PullRequest { ${PR_FIELDS} } }
   }
@@ -52,6 +53,8 @@ interface RawPull {
 export interface GithubResult {
   login: string;
   pulls: PullRequest[];
+  /** Orgs whose results were silently withheld. See `unauthorizedOrgs`. */
+  blockedOrgs: string[];
 }
 
 export interface GithubClient {
@@ -140,6 +143,32 @@ export function createGithub(config: GithubConfig): GithubClient {
     return body.data;
   }
 
+  /**
+   * Org memberships according to REST, which unlike GraphQL still names the
+   * ones this token isn't authorised for.
+   *
+   * Best-effort on purpose: this is a diagnostic, and a diagnostic that can
+   * turn a perfectly good fetch into a failed one is worse than no diagnostic.
+   */
+  async function memberships(): Promise<string[]> {
+    try {
+      const response = await fetch(`${base}/user/orgs?per_page=100`, {
+        headers: {
+          Authorization: `Bearer ${config.token}`,
+          Accept: 'application/vnd.github+json',
+          'User-Agent': 'j-time',
+        },
+      });
+      if (!response.ok) return [];
+      const body = await response.json();
+      return Array.isArray(body)
+        ? body.map((o: { login?: string }) => o.login ?? '').filter(Boolean)
+        : [];
+    } catch {
+      return [];
+    }
+  }
+
   return {
     async getPulls(): Promise<GithubResult> {
       // `archived:false` keeps read-only repositories out of a list of things you
@@ -149,12 +178,15 @@ export function createGithub(config: GithubConfig): GithubClient {
         mine: 'is:open is:pr author:@me archived:false',
         limit: config.limit,
       })) as unknown as {
-        viewer: { login: string };
+        viewer: { login: string; organizations: { nodes: ({ login: string } | null)[] } };
         review: { nodes: (RawPull | null)[] };
         mine: { nodes: (RawPull | null)[] };
       };
 
       const login = data.viewer?.login ?? '';
+      const visible = (data.viewer?.organizations?.nodes ?? [])
+        .map((o) => o?.login ?? '')
+        .filter(Boolean);
       // A search for issues can return an issue, which the PR fragment leaves as
       // an empty object — hence the number check rather than a bare null check.
       const keep = (nodes: (RawPull | null)[]): RawPull[] =>
@@ -162,6 +194,7 @@ export function createGithub(config: GithubConfig): GithubClient {
 
       return {
         login,
+        blockedOrgs: unauthorizedOrgs(await memberships(), visible),
         pulls: [
           ...keep(data.review?.nodes ?? []).map((n) => toPull(n, login, true)),
           ...keep(data.mine?.nodes ?? []).map((n) => toPull(n, login, false)),

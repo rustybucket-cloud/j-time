@@ -26,6 +26,7 @@ let client: GithubClient = createGithub(config);
 
 let pulls: PullRequest[] = [];
 let login: string | null = null;
+let blockedOrgs: string[] = [];
 
 function publicConfig(): PublicGithubConfig {
   const { token, ...rest } = config;
@@ -53,13 +54,14 @@ export const plugin: MainPlugin<GithubSnapshot, GithubConfig> = {
 
   configured: () => Boolean(config.token) && config.host.trim().length > 0,
 
-  snapshot: () => ({ config: publicConfig(), pulls, login }),
+  snapshot: () => ({ config: publicConfig(), pulls, login, blockedOrgs }),
 
   async refresh(): Promise<ActionResult> {
     if (!plugin.configured()) return { ok: false, error: 'No GitHub token yet' };
     const result = await client.getPulls();
     pulls = result.pulls;
     login = result.login;
+    blockedOrgs = result.blockedOrgs;
     return { ok: true };
   },
 

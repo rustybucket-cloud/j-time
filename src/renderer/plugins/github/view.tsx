@@ -10,7 +10,7 @@
 import type { ReactNode } from 'react';
 import type { Ctx, PluginView, Row, SectionContent } from '@shared/plugin';
 import { githubConfigured, type GithubSnapshot } from '@shared/github';
-import { groupPulls, pinnedPull, type PrItem } from '@shared/prs';
+import { groupPulls, pinnedPull, ssoAuthorizeUrl, type PrItem } from '@shared/prs';
 import { Settings } from './Settings';
 
 const ID = 'github';
@@ -48,6 +48,28 @@ function actions(item: PrItem, ctx: Ctx): Row[] {
   ];
 }
 
+/**
+ * One row per org this token can't read.
+ *
+ * A row rather than a note on the header, because the failure it reports is
+ * invisible by construction: SSO-withheld results arrive as HTTP 200 with fewer
+ * pull requests, so the honest rendering of "your whole work org is missing"
+ * cannot be something you have to notice the absence of. It goes away by itself
+ * once the token is authorised.
+ */
+function blockedRows(snapshot: GithubSnapshot): Row[] {
+  return snapshot.blockedOrgs.map((org) => ({
+    id: `sso:${org}`,
+    title: `${org} needs authorising`,
+    subtitle: 'SAML SSO — its pull requests are being withheld. Press ↩ to authorise.',
+    keywords: ['sso', 'saml', 'permission', org],
+    subsection: 'Not connected',
+    lead: 'blocked' as const,
+    enterLabel: 'Authorise',
+    run: () => void window.jt.openUrl(ssoAuthorizeUrl(snapshot.config.host, org)),
+  }));
+}
+
 function note(snapshot: GithubSnapshot, rows: Row[]): string | undefined {
   if (!githubConfigured(snapshot.config)) return 'Not set up';
   if (rows.length === 0) return 'Nothing open';
@@ -62,19 +84,22 @@ export const githubView: PluginView<GithubSnapshot> = {
     const items = groupPulls(snapshot.pulls, ctx.now);
     const pinned = pinnedPull(items);
 
-    const rows: Row[] = items.map((item) => ({
-      id: item.id,
-      title: item.title,
-      subtitle: item.subtitle,
-      keywords: item.keywords,
-      subsection: item.subsection,
-      lead: item.lead,
-      badges: item.badges,
-      pin: item.id === pinned?.id,
-      enterLabel: 'Open',
-      run: () => void window.jt.openUrl(item.pr.url),
-      actions: actions(item, ctx),
-    }));
+    const rows: Row[] = [
+      ...blockedRows(snapshot),
+      ...items.map((item) => ({
+        id: item.id,
+        title: item.title,
+        subtitle: item.subtitle,
+        keywords: item.keywords,
+        subsection: item.subsection,
+        lead: item.lead,
+        badges: item.badges,
+        pin: item.id === pinned?.id,
+        enterLabel: 'Open',
+        run: () => void window.jt.openUrl(item.pr.url),
+        actions: actions(item, ctx),
+      })),
+    ];
 
     return {
       rows,

@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   formatAge,
   groupPulls,
+  ssoAuthorizeUrl,
+  unauthorizedOrgs,
   MINE,
   NEEDS_REVIEW,
   pinnedPull,
@@ -173,5 +175,56 @@ describe('formatAge', () => {
 
   it('never goes negative on a clock that is slightly behind', () => {
     expect(formatAge(-5000)).toBe('0m');
+  });
+});
+
+describe('unauthorizedOrgs', () => {
+  // The whole point: an org that enforces SSO and hasn't authorised the token
+  // answers with HTTP 200 and fewer results. REST still names it in the
+  // membership list; GraphQL's viewer drops it. The difference is the evidence.
+  it('is what REST lists and GraphQL does not', () => {
+    expect(unauthorizedOrgs(['fs-webdev', 'fs-eng', 'votary'], ['fs-webdev', 'votary'])).toEqual([
+      'fs-eng',
+    ]);
+  });
+
+  it('is empty when everything is visible', () => {
+    expect(unauthorizedOrgs(['a', 'b'], ['b', 'a'])).toEqual([]);
+  });
+
+  // Org logins are case-insensitive, and the two endpoints don't always agree
+  // on casing — a false positive here would nag about a working org forever.
+  it('ignores case', () => {
+    expect(unauthorizedOrgs(['FS-Eng'], ['fs-eng'])).toEqual([]);
+  });
+
+  it('keeps the membership order', () => {
+    expect(unauthorizedOrgs(['a', 'b', 'c'], [])).toEqual(['a', 'b', 'c']);
+  });
+});
+
+describe('ssoAuthorizeUrl', () => {
+  // The API host is not the web host: github.com's API is on api.github.com,
+  // and sending someone to api.github.com/orgs/... is a dead end.
+  it('drops the api. prefix for github.com', () => {
+    expect(ssoAuthorizeUrl('https://api.github.com', 'fs-eng')).toBe(
+      'https://github.com/orgs/fs-eng/sso',
+    );
+  });
+
+  it('drops the /api suffix for Enterprise', () => {
+    expect(ssoAuthorizeUrl('https://git.example.com/api', 'acme')).toBe(
+      'https://git.example.com/orgs/acme/sso',
+    );
+  });
+
+  it('tolerates a trailing slash', () => {
+    expect(ssoAuthorizeUrl('https://api.github.com/', 'x')).toBe(
+      'https://github.com/orgs/x/sso',
+    );
+  });
+
+  it('falls back to github.com rather than building a broken link', () => {
+    expect(ssoAuthorizeUrl('not a url', 'x')).toBe('https://github.com/orgs/x/sso');
   });
 });

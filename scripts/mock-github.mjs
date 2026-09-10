@@ -1,9 +1,11 @@
 /**
  * A pretend GitHub, so the PR section can be exercised without a token.
  *
- * Implements one endpoint — POST /graphql — and answers the single query the
- * plugin sends, by its aliases (`viewer`, `review`, `mine`). Everything is in
- * memory and fixed; restart it and you're back to the same pull requests.
+ * Implements two endpoints. POST /graphql answers the single query the plugin
+ * sends, by its aliases (`viewer`, `review`, `mine`). GET /user/orgs answers the
+ * membership probe — and names one org that `viewer.organizations` does not, so
+ * the SSO-withheld case has something to render. Everything is in memory and
+ * fixed; restart it and you're back to the same pull requests.
  *
  * Run via scripts/sandbox.sh, which points the plugin's `host` here.
  *
@@ -71,26 +73,44 @@ function pull(number, repo, title, login, over = {}) {
   };
 }
 
+/**
+ * `org-locked` is a membership REST admits to and GraphQL doesn't — which is
+ * exactly what an org enforcing SAML SSO looks like to an unauthorised token,
+ * and the only signal there is that a whole org's pull requests are missing.
+ */
+const VISIBLE_ORGS = ['org'];
+const ALL_ORGS = ['org', 'org-locked'];
+
+const json = (res, status, body) => {
+  res.writeHead(status, { 'content-type': 'application/json' });
+  res.end(JSON.stringify(body));
+};
+
 const server = createServer((req, res) => {
   let body = '';
   req.on('data', (chunk) => (body += chunk));
   req.on('end', () => {
+    if (!/^Bearer .+/.test(req.headers.authorization ?? '')) {
+      json(res, 401, { message: 'Bad credentials' });
+      return;
+    }
+    if (req.method === 'GET' && req.url.startsWith('/user/orgs')) {
+      console.log('user/orgs');
+      json(res, 200, ALL_ORGS.map((login) => ({ login })));
+      return;
+    }
     if (req.method !== 'POST' || !req.url.startsWith('/graphql')) {
       res.writeHead(404).end('not found');
       return;
     }
-    if (!/^Bearer .+/.test(req.headers.authorization ?? '')) {
-      res.writeHead(401, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ message: 'Bad credentials' }));
-      return;
-    }
     console.log('graphql', JSON.parse(body).variables?.limit ?? '');
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(
-      JSON.stringify({
-        data: { viewer: { login: ME }, review: { nodes: REVIEW }, mine: { nodes: MINE } },
-      }),
-    );
+    json(res, 200, {
+      data: {
+        viewer: { login: ME, organizations: { nodes: VISIBLE_ORGS.map((login) => ({ login })) } },
+        review: { nodes: REVIEW },
+        mine: { nodes: MINE },
+      },
+    });
   });
 });
 

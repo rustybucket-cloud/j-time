@@ -30,6 +30,12 @@ export interface GithubSnapshot {
   pulls: PullRequest[];
   /** Who the token belongs to, once we've asked. */
   login: string | null;
+  /**
+   * Orgs this token is a member of but cannot read, because they enforce SAML
+   * SSO and it hasn't been authorised. Their pull requests are missing from
+   * `pulls` and nothing in the response said so.
+   */
+  blockedOrgs: string[];
 }
 
 /** A token is the only thing this plugin cannot work without. */

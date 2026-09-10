@@ -127,6 +127,45 @@ export function pinnedPull(items: PrItem[]): PrItem | null {
   return items.find((i) => i.subsection === NEEDS_REVIEW && !i.pr.draft) ?? null;
 }
 
+/**
+ * Orgs the token belongs to but cannot actually read.
+ *
+ * The only way to know. An org that enforces SAML SSO and hasn't authorised this
+ * token is not an error and not a 403: GraphQL search simply returns fewer
+ * results, with HTTP 200 and no header saying so. REST's membership list still
+ * names it, though, and GraphQL's `viewer.organizations` doesn't — so the
+ * difference between the two lists is exactly the set of orgs whose pull
+ * requests are being silently withheld.
+ *
+ * Getting this wrong in the quiet direction is what makes it worth detecting: a
+ * whole org's work vanishes and the section just says "Nothing open".
+ */
+export function unauthorizedOrgs(memberships: string[], visible: string[]): string[] {
+  const seen = new Set(visible.map((o) => o.toLowerCase()));
+  return memberships.filter((org) => !seen.has(org.toLowerCase()));
+}
+
+/**
+ * Where to go to authorise a token for an org.
+ *
+ * Built from the *web* host, which the API host is not: github.com's API lives
+ * on `api.github.com`, while an Enterprise install puts it under `/api` on the
+ * company's own domain. Both fold back to the same origin the browser wants.
+ */
+export function ssoAuthorizeUrl(apiHost: string, org: string): string {
+  const trimmed = apiHost.trim().replace(/\/+$/, '');
+  let web: string;
+  try {
+    const url = new URL(trimmed);
+    url.hostname = url.hostname.replace(/^api\./, '');
+    url.pathname = url.pathname.replace(/\/api$/, '');
+    web = url.origin + (url.pathname === '/' ? '' : url.pathname);
+  } catch {
+    web = 'https://github.com';
+  }
+  return `${web}/orgs/${encodeURIComponent(org)}/sso`;
+}
+
 /** A coarse "how long ago", to one unit. Precision past that is not information. */
 export function formatAge(ms: number): string {
   const minutes = Math.max(0, Math.floor(ms / 60_000));

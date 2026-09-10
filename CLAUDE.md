@@ -272,6 +272,22 @@ blank a list you're about to act on, and every action except the two that call
 JIRA works fine against stale rows. This is the shell's guarantee now, and it
 applies per section: one plugin failing leaves the others live.
 
+**An org enforcing SAML SSO withholds results silently.** REST answers 403 with
+an `X-GitHub-SSO` header, which is easy. GraphQL *search* does not: it returns
+HTTP 200, no header, and simply fewer pull requests — so an unauthorised token
+makes a whole org's work vanish while the section reads "Nothing open". The only
+signal is that REST `/user/orgs` still names the org and GraphQL
+`viewer.organizations` doesn't; `unauthorizedOrgs` is that difference, and the
+PR section renders it as a row rather than a note, because a failure that is
+invisible by construction cannot be reported by something you have to notice the
+absence of. The membership probe is best-effort — a diagnostic that can fail a
+working fetch is worse than no diagnostic.
+
+**`review-requested:@me` already covers team requests.** Checked against the
+docs rather than assumed: "if the requested person is on a team that is
+requested for review, then review requests for that team will also appear".
+`user-review-requested:` is the direct-only one — don't "fix" the query to that.
+
 **GitHub is GraphQL, not REST search.** `reviewDecision` and the check rollup
 don't exist on REST's issue search results, and those two things are most of
 what the PR section is *for* — REST would mean one search plus an N+1 of per-PR
