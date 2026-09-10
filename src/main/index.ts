@@ -109,8 +109,8 @@ async function capture(file: string): Promise<void> {
   showPanel();
   const panel = getPanel();
   if (!panel) return app.quit();
-  // A browser account launches Chrome and waits for GitHub to render, which
-  // takes rather longer than a fetch — JT_CAPTURE_DELAY buys it the time.
+  // JT_CAPTURE_DELAY buys more time for a plugin that is slower than a fetch —
+  // a shot taken mid-refresh looks exactly like a short list.
   const settle = Number(process.env.JT_CAPTURE_DELAY) || 1800;
   await new Promise((r) => setTimeout(r, settle));
 

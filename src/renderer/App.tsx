@@ -635,7 +635,7 @@ function EmptyState({
     return (
       <>
         <strong>No matches for “{query}”</strong>
-        {inOverlay ? 'Press ⎋ to go back.' : 'Try an issue key, a repo, or part of a title.'}
+        {inOverlay ? 'Press ⎋ to go back.' : 'Try an issue key, or part of a summary.'}
       </>
     );
   }

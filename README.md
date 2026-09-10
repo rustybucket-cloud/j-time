@@ -1,18 +1,14 @@
 # j-time
 
 A menu-bar launcher with a Raycast-style command palette. Press a hotkey and see
-what you're in the middle of — across every app it's plugged into — then act on
-it without leaving the keyboard.
+what you're in the middle of, then act on it without leaving the keyboard.
 
-Two plugins ship with it:
-
-- **JIRA** — your board, with a timer. Put the clock on a story and file the
-  time against JIRA.
-- **Pull Requests** — what's waiting on your review, and what you have open.
+One plugin ships with it: **JIRA** — your board, with a timer. Put the clock on
+a story and file the time against JIRA.
 
 Each plugin gets its own section. You choose the order, collapse the ones you're
-not using, and a section may lift one row above the rest — the running timer, or
-the review that has waited longest.
+not using, and a section may lift one row above the rest — the running timer,
+say.
 
 ![The palette](docs/images/palette.png)
 
@@ -66,8 +62,7 @@ npm start
 
 ## Set up
 
-The first launch opens straight to Settings. Each plugin is set up separately,
-and you can use one without the other.
+The first launch opens straight to Settings. Each plugin is set up separately.
 
 **JIRA** needs three things:
 
@@ -76,43 +71,15 @@ and you can use one without the other.
 - an API token from **id.atlassian.com → Security → API tokens**
 
 Also there: the activity labels you file time under, and the rounding increment.
-
-**Pull Requests** takes one *account* per token, because a fine-grained token
-only ever speaks for one owner — your personal repos and each work org need
-their own. Add as many as you have.
-
-- **Fine-grained token**: `Pull requests: Read` and `Metadata: Read` on the
-  repositories you want, plus `Members: Read` if you'd like to be told about
-  orgs the token can't see.
-- **Classic token**: `repo` and `read:org`. If an org enforces SAML SSO, use
-  **Configure SSO → Authorize** on the token, or its pull requests are withheld
-  with no error.
-
-- **Browser sign-in**, for an org that no token can reach — some enforce SAML
-  SSO and authorise no token you're able to make. Sign in once through the real
-  GitHub login (SSO and two-factor included) and j-time reads the same
-  dashboard pages you would, in a headless Chrome. It shows fewer badges, since
-  review decisions and check results aren't reliably on those pages, and it
-  keeps a full GitHub session on your machine, so sign out when you're done
-  with it.
-
-  It drives **Google Chrome** if you have it, which almost everyone does and
-  which avoids downloading a second browser. Without Chrome, run
-  `npx playwright install chromium` once.
-
-The API root defaults to `https://api.github.com`; point it at
-`https://your-company.com/api` for GitHub Enterprise. A browser account takes
-the site you'd visit instead — `https://github.com`.
-
-Both tokens are stored encrypted with Electron's safeStorage.
+The token is stored encrypted with Electron's safeStorage.
 
 The app's own settings — the hotkey, and the order of the sections — are on the
 same screen, reached with `⌘,`.
 
 ## Use it
 
-Press `⌘⇧J` for the palette. Sections appear in the order you arranged them; the
-running story and the oldest review request are pinned above them.
+Press `⌘⇧J` for the palette. Sections appear in the order you arranged them,
+with the running story pinned above them.
 
 Typing sorts *within* each section and leaves the sections where they are — the
 arrangement is the thing you set up, and dissolving it the moment you search
@@ -139,13 +106,6 @@ On a JIRA story:
 | `⌘D` | Finish it — sweep any unfiled time, then transition |
 | `⌘I` | Clock, activity breakdown, estimate |
 | `⌘O` / `⌘C` | Open in JIRA / copy the key |
-
-On a pull request:
-
-| Key | |
-|---|---|
-| `↩` | Open it in a browser |
-| `⌘C` | Copy the link |
 
 The button at the bottom-left of the palette opens the app's own menu — Settings,
 refresh and quitting. With no Dock icon and no application menu, that button and

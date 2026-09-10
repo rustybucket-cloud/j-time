@@ -4,10 +4,15 @@ A menu-bar launcher with a Raycast-style command palette, hosting a plugin per
 app. Electron + TypeScript + React, vanilla CSS, no database, no auth, no state
 management library. Runs only on the user's machine.
 
-Two plugins ship: **jira** (the board, and the timer) and **github** (pull
-requests). The JIRA half was the whole app until the shell grew plugins;
-everything about *time* is unchanged from that, and before that from
-`../jira-timer`.
+One plugin ships: **jira** — the board, and the timer. It was the whole app
+until the shell grew plugins, and everything about *time* is unchanged from
+that, and before that from `../jira-timer`.
+
+A second plugin (**github**, pull requests) was built and then removed; it is
+in this branch's history if the shape of a second one is ever useful as a
+worked example. The shell is deliberately still a shell — with one plugin it
+looks like overhead, and the point of keeping it is that the second one costs
+a directory rather than a rewrite.
 
 ## Commands
 
@@ -54,6 +59,13 @@ The split, in one line each:
 `shared/ipc.ts`, and the plugin's own directory. That `PluginSnapshots` line is
 deliberate friction — plugins are compiled in, so there is no reason to give up
 knowing their shapes.
+
+**Two parts of the contract currently have no user**, both kept because they
+are the shell's, not any plugin's: `SecretField`'s `{ list, field }` form, for
+a plugin holding several credentials rather than one, and `mergeConfig`, for
+folding a settings patch when the default "keep the secrets the form omitted"
+isn't enough. The removed PR plugin needed both. Delete them if a year goes by
+and nothing does.
 
 **Rows are data, not markup.** A `lead` is a *meaning* (`attention`, `blocked`,
 `ok`) and an accessory is a `Badge`, so a PR waiting on you and a chunk of
@@ -283,120 +295,6 @@ another's host the first time somebody reorders the list. Accounts fail
 independently: `allSettled`, a row per broken one, and the section only counts
 as failed when every account is.
 
-**Browser sign-in is the fallback when no token can reach an org.** An org can
-enforce SAML SSO *and* leave no token type it will authorise, at which point
-the API shows nothing and says nothing. A signed-in session still works,
-because it's the one you use yourself. `kind: 'browser'` on an account swaps
-the fetch for `browser.ts`, which reads the same two dashboard pages you would
-— everything downstream (rows, pinning, ranking, badges) is unchanged.
-
-Four things about it, all load-bearing:
-
-- **The host means a different thing per kind, so it is coerced, not trusted.**
-  A token account's host is an API root; a browser account's is the site you
-  visit. An account switched from one to the other keeps whatever it had, and
-  `https://api.github.com/login` is a 404 rather than a sign-in page — so
-  `webHostFor` folds either kind back to the one a browser wants. Settings also
-  saves before signing in, because the main process signs into the *stored*
-  account and a button that used the pre-edit host was the actual bug.
-- **Playwright drives it, against the Chrome you already have.** The reason is
-  the render wait: `waitForSelector` is a real answer to "wait until the rows
-  exist", where the hand-rolled `MutationObserver` this started as was a guess
-  that usually worked. `launchPersistentContext` keeps the session in
-  `$DIR/browser/<accountId>`, so `JT_HOME` redirects it with everything else
-  and a sandbox run can't touch a real login.
-- **`channel: 'chrome'` first, bundled Chromium second, Edge third.**
-  Playwright's own Chromium is a ~150MB download a packaged app has no good way
-  to fetch and a corporate network may refuse; installed Chrome is already
-  there, already updated by somebody else, and being a real branded browser is
-  the one GitHub is least likely to treat as a robot. Nothing ships a browser.
-- **A persistent context locks its profile directory**, so two of them for one
-  account is an error rather than a race — every operation on an account goes
-  through `serial()`, sign-in included.
-- **The extractor keys on the URL shape, not on class names.** The markup
-  around a pull request is restyled constantly; `/{owner}/{repo}/pull/{number}`
-  is not. `parsePullUrl` is where that lives, and it's tested.
-- **The rows are rendered in the browser, so the read has to wait for them.**
-  GitHub's pull request lists come back as a React shell — curl one and there
-  are no `/pull/` links in the HTML at all — so reading when `loadURL` resolves
-  catches however much had hydrated, which is some of the list or none of it.
-  The in-page script waits on a `MutationObserver` until rows exist or the page
-  says it has none, and a wait that times out is reported as a failure rather
-  than as an empty list. `scripts/mock-github.mjs` renders its rows from a
-  script for exactly this reason: a mock that served them in the HTML would
-  pass while the real thing raced.
-- **And the dashboard paginates**, at 25. `readList` follows `rel="next"` up to
-  `MAX_PAGES`; the mock paginates at two so a truncated read shows up as a
-  missing row.
-- **What can't be read reliably is left out.** Review decisions and check
-  rollups aren't on the dashboard in any trustworthy form, so a browser account
-  produces rows without those badges rather than ones guessed from an icon's
-  class name — a wrong badge is worse than a missing one.
-- **An empty read and an unreadable page look identical**, so `getPullsViaBrowser`
-  refuses to report "nothing open" unless the page actually said so. Silence
-  from a scraper has to be distrusted; that's the whole reason this failure
-  mode was worth building around in the first place.
-
-The session is a broader credential than a token — it is a whole GitHub login
-sitting in `userData`. `signOut` clears it, and Settings offers that next to
-sign-in.
-
-**An org enforcing SAML SSO withholds results silently.** REST answers 403 with
-an `X-GitHub-SSO` header, which is easy. GraphQL *search* does not: it returns
-HTTP 200, no header, and simply fewer pull requests — so an unauthorised token
-makes a whole org's work vanish while the section reads "Nothing open". The only
-signal is that REST `/user/orgs` still names the org and GraphQL
-`viewer.organizations` doesn't; `unauthorizedOrgs` is that difference, and the
-PR section renders it as a row rather than a note, because a failure that is
-invisible by construction cannot be reported by something you have to notice the
-absence of. The membership probe is best-effort — a diagnostic that can fail a
-working fetch is worse than no diagnostic.
-
-**`review-requested:@me` already covers team requests.** Checked against the
-docs rather than assumed: "if the requested person is on a team that is
-requested for review, then review requests for that team will also appear".
-`user-review-requested:` is the direct-only one — don't "fix" the query to that.
-
-**A GraphQL error does not mean the request failed.** GitHub answers with HTTP
-200, the fields it could resolve in `data`, and an `errors` entry per field it
-refused. `graphql()` therefore returns both and throws nothing; `getPulls`
-fails only when *neither* search resolved. Throwing on the first error is what
-made a fine-grained token show "Resource not accessible by personal access
-token" instead of its pull requests — the token could search perfectly well, it
-just couldn't read `viewer.organizations`. When it does throw, the message
-carries the refused field's `path`, because that message on its own tells you
-nothing about what to grant.
-
-**A diagnostic must not be able to sink the thing it diagnoses.**
-`viewer.organizations` lives in its own request, sent only after REST
-`/user/orgs` came back non-empty — which never happens for a fine-grained
-token. So the field that costs one the whole fetch is never asked for by a
-token that would be refused it.
-
-**The org warning is classic-token-only, and that's GitHub's rule.**
-`GET /user/orgs` is documented as returning "a 200 Success response with an
-empty list" to a fine-grained token. It degrades the right way — an empty
-membership list makes `unauthorizedOrgs` return nothing — so a fine-grained
-token gets no org warnings rather than a warning about every org it holds.
-Don't "fix" this by asking for a `Members: Read` permission; the endpoint
-ignores fine-grained tokens whatever they're granted.
-
-**Still unverified: whether GraphQL `search` is useful to a fine-grained
-token.** GraphQL itself supports them ("all fine-grained personal access tokens
-include read access to public repositories", and the permissions needed follow
-the data requested), and nothing documents search as unsupported — but a
-fine-grained token only reaches the repositories it selected, so the section
-may come back thin. Untested against a real one. If search turns out unusable,
-authored PRs can come from `viewer { pullRequests }` with no search index
-involved; review requests have no such connection and would need per-repo
-enumeration.
-
-**GitHub is GraphQL, not REST search.** `reviewDecision` and the check rollup
-don't exist on REST's issue search results, and those two things are most of
-what the PR section is *for* — REST would mean one search plus an N+1 of per-PR
-requests. A GraphQL error arrives with HTTP 200 and a body full of `errors`, so
-checking the status is not enough.
-
 **JIRA's Done category includes cancellation.** Most boards have both `Done` and
 `Cancelled` in `statusCategory = done`, and `/transitions` doesn't guarantee an
 order. `preferredDoneTransition` skips the abandonment ones and returns null
@@ -431,7 +329,7 @@ reach for it.
 ## Testing
 
 `npm test` covers pure logic only: `time`, `timer-logic`, `activities`, `stages`,
-`conn`, `worklog`, `palette`, `board`, `sections`, `layout`, `prs`, `keys`. There
+`conn`, `worklog`, `palette`, `board`, `sections`, `layout`, `keys`. There
 are no component or IPC tests — if you add a feature with real logic in it, put
 that logic in `src/shared/` and test it there rather than reaching for a
 rendering harness.
@@ -440,18 +338,18 @@ rendering harness.
 doing this way: ranking, pinning, the top hit, collapse and cursor movement are
 all pure functions with tests, leaving the renderer to draw what they return.
 `layout.ts` is the same for the user's arrangement. A new plugin's *ordering*
-belongs in `shared/` next to `prs.ts`; only the mapping onto rows belongs in
-`renderer/plugins/`.
+belongs in `shared/` alongside `board.ts`; only the mapping onto rows belongs
+in `renderer/plugins/`.
 
-`scripts/sandbox.sh` runs the app against both mocks — `mock-jira.mjs` and
-`mock-github.mjs` — with a scratch `JT_HOME`.
+`scripts/sandbox.sh` runs the app against `mock-jira.mjs` with a scratch
+`JT_HOME`.
 
 **For the UI itself, screenshot it.** A borderless always-on-top overlay can't be
 pointed at with a normal screenshot tool. `JT_CAPTURE=path.png` shows the panel,
 saves a picture and quits; `JT_CAPTURE_KEYS="cmd+k,Enter"` drives it there first.
-`JT_CAPTURE_DELAY=20000` waits longer before the shot — a browser account has
-to launch Chrome and wait for GitHub to render, and the default 1.8s catches
-the panel mid-fetch, which reads exactly like a truncated list.
+`JT_CAPTURE_DELAY=20000` waits longer before the shot, for a plugin slower than
+a fetch — the default 1.8s catches the panel mid-refresh, which reads exactly
+like a truncated list.
 
 Two things about `sendInputEvent`, both established the hard way:
 

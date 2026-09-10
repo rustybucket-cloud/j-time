@@ -1,10 +1,10 @@
 #!/bin/sh
 #
-# j-time against a pretend JIRA and a pretend GitHub, with its own scratch state.
+# j-time against a pretend JIRA, with its own scratch state.
 #
-# Nothing here can reach a real board, a real repo or your real ~/.j-time: the
-# config points at scripts/mock-jira.mjs and scripts/mock-github.mjs, and JT_HOME
-# redirects state.json into a temp directory.
+# Nothing here can reach a real board or your real ~/.j-time: the config points
+# at scripts/mock-jira.mjs, and JT_HOME redirects state.json into a temp
+# directory.
 # That matters more than it looks, because filing time posts a worklog the moment
 # you pick an activity — "just try it on a real story" creates real worklogs.
 #
@@ -15,7 +15,6 @@ set -e
 cd "$(dirname "$0")/.."
 
 PORT=${MOCK_PORT:-4199}
-GH_PORT=${MOCK_GH_PORT:-4198}
 SANDBOX=${JT_SANDBOX:-/tmp/j-time-sandbox}
 SHOT="$1"
 
@@ -27,7 +26,7 @@ mkdir -p "$SANDBOX"
 cat > "$SANDBOX/config.json" <<JSON
 {
   "shell": { "hotkey": "Command+Shift+J" },
-  "layout": { "order": ["jira", "github"], "collapsed": [], "pinsOff": [] },
+  "layout": { "order": ["jira"], "collapsed": [], "pinsOff": [] },
   "plugins": {
     "jira": {
       "baseUrl": "http://localhost:$PORT",
@@ -37,14 +36,6 @@ cat > "$SANDBOX/config.json" <<JSON
       "roundMinutes": 5,
       "boardId": null,
       "mineOnly": true
-    },
-    "github": {
-      "accounts": [
-        { "id": "a1", "label": "Personal", "host": "http://localhost:$GH_PORT", "token": "sandbox-token" },
-        { "id": "a2", "label": "Work", "host": "http://localhost:$GH_PORT", "token": "sandbox-work-token" },
-        { "id": "a3", "label": "Browser", "kind": "browser", "host": "http://localhost:$GH_PORT", "token": "" }
-      ],
-      "limit": 25
     }
   }
 }
@@ -81,9 +72,7 @@ node -e '
 
 node scripts/mock-jira.mjs "$PORT" &
 MOCK=$!
-node scripts/mock-github.mjs "$GH_PORT" &
-MOCK_GH=$!
-trap 'kill $MOCK $MOCK_GH 2>/dev/null' EXIT INT TERM
+trap 'kill $MOCK 2>/dev/null' EXIT INT TERM
 sleep 1
 
 npx electron-vite build >/dev/null

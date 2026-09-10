@@ -9,9 +9,7 @@
 import type { PluginView } from '@shared/plugin';
 import type { PluginId } from '@shared/ipc';
 import { jiraView } from './jira/view';
-import { githubView } from './github/view';
 
 export const VIEWS: Record<PluginId, PluginView<never>> = {
   jira: jiraView as PluginView<never>,
-  github: githubView as PluginView<never>,
 };
