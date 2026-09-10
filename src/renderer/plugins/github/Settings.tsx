@@ -124,9 +124,9 @@ export function Settings({
               />
               <div className="note">
                 Fine-grained: <code>Pull requests: Read</code> and{' '}
-                <code>Metadata: Read</code> on the repositories you want, plus{' '}
-                <code>Members: Read</code> to be told about orgs it can’t see. Classic:{' '}
-                <code>repo</code> and <code>read:org</code>.
+                <code>Metadata: Read</code> on the repositories you pick. Classic:{' '}
+                <code>repo</code> and <code>read:org</code>, plus{' '}
+                <strong>Configure SSO → Authorize</strong> for any org that enforces it.
               </div>
             </div>
 

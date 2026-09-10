@@ -150,6 +150,12 @@ export function createGithub(account: GithubAccount, limit: number): GithubClien
    *
    * Best-effort on purpose: this is a diagnostic, and a diagnostic that can
    * turn a perfectly good fetch into a failed one is worse than no diagnostic.
+   *
+   * It is also classic-token-only, by GitHub's design rather than by ours:
+   * "requests using a fine-grained access token will receive a 200 Success
+   * response with an empty list". That degrades the right way — an empty
+   * membership list makes `unauthorizedOrgs` return nothing, so a fine-grained
+   * token gets no org warnings rather than a warning about every org it holds.
    */
   async function memberships(): Promise<string[]> {
     try {

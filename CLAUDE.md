@@ -299,13 +299,23 @@ docs rather than assumed: "if the requested person is on a team that is
 requested for review, then review requests for that team will also appear".
 `user-review-requested:` is the direct-only one — don't "fix" the query to that.
 
-**Unverified: whether GraphQL `search` returns anything useful to a
-fine-grained token.** Everything the PR section lists comes from `search`, and
-a fine-grained token is scoped to selected repositories — so it may see only
-those, or nothing. Nobody has tested it against a real fine-grained token yet.
-If it turns out search is unusable, authored PRs can come from
-`viewer { pullRequests }` with no search index involved; review requests have
-no such connection and would need per-repo enumeration.
+**The org warning is classic-token-only, and that's GitHub's rule.**
+`GET /user/orgs` is documented as returning "a 200 Success response with an
+empty list" to a fine-grained token. It degrades the right way — an empty
+membership list makes `unauthorizedOrgs` return nothing — so a fine-grained
+token gets no org warnings rather than a warning about every org it holds.
+Don't "fix" this by asking for a `Members: Read` permission; the endpoint
+ignores fine-grained tokens whatever they're granted.
+
+**Still unverified: whether GraphQL `search` is useful to a fine-grained
+token.** GraphQL itself supports them ("all fine-grained personal access tokens
+include read access to public repositories", and the permissions needed follow
+the data requested), and nothing documents search as unsupported — but a
+fine-grained token only reaches the repositories it selected, so the section
+may come back thin. Untested against a real one. If search turns out unusable,
+authored PRs can come from `viewer { pullRequests }` with no search index
+involved; review requests have no such connection and would need per-repo
+enumeration.
 
 **GitHub is GraphQL, not REST search.** `reviewDecision` and the check rollup
 don't exist on REST's issue search results, and those two things are most of
