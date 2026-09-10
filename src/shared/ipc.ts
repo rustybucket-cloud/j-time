@@ -16,6 +16,7 @@ import type { ActionResult, QueryResult } from './plugin';
 import type { LayoutState } from './layout';
 import type { ShellConfig, ShellSnapshot } from './shell';
 import type { JiraSnapshot } from './jira';
+import type { ClaudeSnapshot } from './claude';
 
 /**
  * Every installed plugin's slice, by id.
@@ -26,6 +27,7 @@ import type { JiraSnapshot } from './jira';
  */
 export interface PluginSnapshots {
   jira: JiraSnapshot;
+  claude: ClaudeSnapshot;
 }
 
 export type PluginId = keyof PluginSnapshots & string;

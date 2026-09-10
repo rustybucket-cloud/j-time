@@ -7,6 +7,7 @@
  */
 
 import { plugin as jira } from './jira';
+import { plugin as claude } from './claude';
 import type { MainPlugin } from '../plugin';
 
 /**
@@ -17,4 +18,7 @@ import type { MainPlugin } from '../plugin';
  * the registry stores. Erasing the config type on the interface instead would
  * push the cast into every plugin — one per author rather than one per app.
  */
-export const PLUGINS: MainPlugin[] = [jira as unknown as MainPlugin];
+export const PLUGINS: MainPlugin[] = [
+  jira as unknown as MainPlugin,
+  claude as unknown as MainPlugin,
+];

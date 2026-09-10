@@ -4,21 +4,25 @@ A menu-bar launcher with a Raycast-style command palette, hosting a plugin per
 app. Electron + TypeScript + React, vanilla CSS, no database, no auth, no state
 management library. Runs only on the user's machine.
 
-One plugin ships: **jira** — the board, and the timer. It was the whole app
-until the shell grew plugins, and everything about *time* is unchanged from
-that, and before that from `../jira-timer`.
+Two plugins ship:
 
-A second plugin (**github**, pull requests) was built and then removed; it is
-in this branch's history if the shape of a second one is ever useful as a
-worked example. The shell is deliberately still a shell — with one plugin it
-looks like overhead, and the point of keeping it is that the second one costs
-a directory rather than a rewrite.
+- **jira** — the board, and the timer. It was the whole app until the shell
+  grew plugins, and everything about *time* is unchanged from that, and before
+  that from `../jira-timer`.
+- **claude** — which Claude Code sessions are open, and which one is waiting on
+  you. It owns no credentials and writes nothing: the whole plugin is a read of
+  two files Claude Code already keeps.
+
+A third (**github**, pull requests) was built and then removed; it is in this
+branch's history if another worked example is ever useful. The shell was worth
+drawing for exactly the reason `claude` demonstrates: it cost a directory and
+three registration lines, and nothing in the shell learned what a session is.
 
 ## Commands
 
 ```bash
 npm run dev        # electron-vite with renderer HMR
-npm test           # vitest, pure logic only (200 tests)
+npm test           # vitest, pure logic only (275 tests)
 npm run typecheck  # both projects — main/preload, then renderer
 npm run build      # typecheck + bundle into out/
 sh scripts/sandbox.sh   # the app against a mock JIRA, with scratch state
@@ -68,8 +72,9 @@ isn't enough. The removed PR plugin needed both. Delete them if a year goes by
 and nothing does.
 
 **Rows are data, not markup.** A `lead` is a *meaning* (`attention`, `blocked`,
-`ok`) and an accessory is a `Badge`, so a PR waiting on you and a chunk of
-unfiled time look the same without either plugin having picked a colour. One
+`ok`) and an accessory is a `Badge`, so a Claude session waiting on you and a
+chunk of unfiled time look the same without either plugin having picked a
+colour. One
 place — `components/List.tsx` — decides what a meaning looks like. A plugin that
 could return arbitrary JSX would undo the design tokens in an afternoon. The two
 places a plugin *does* return React are `screen()` and `settings()`, which are
@@ -180,11 +185,11 @@ rules the tests pin down:
   A header reading "Not set up" is how you find out a plugin exists at all.
 
 **Pinning is the shell's, and capped at one row per plugin.** JIRA pins the
-running story, the PR section pins the review that has waited longest, and the
-user can switch either off. Uncapped, a plugin that pinned everything would
+running story, the Claude section pins the session that has waited longest, and
+the user can switch either off. Uncapped, a plugin that pinned everything would
 simply be first. Pinned rows lose their own subsection headings on the way up —
-carrying "In Progress" and "Needs your review" with them turned a two-row
-section into four lines of heading.
+carrying "In Progress" and "Waiting on you" with them turned a two-row section
+into four lines of heading.
 
 **Section headers are selectable rows.** That is what makes collapsing (`↩`,
 `←`/`→`) and reordering (`⌘↑`/`⌘↓`) reachable from the keyboard, and it is
@@ -215,6 +220,12 @@ the hotkey then presses on nothing. `installMenu()` replaces it. Setting the men
 to `null` instead is worse: on macOS the clipboard shortcuts in a text field
 *are* the Edit roles, so without them you cannot paste an API token into Settings.
 `panel.on('close')` prevents it a second way.
+
+**A menu accelerator beats a row's `shortcut`.** The menu that stays is still a
+menu: ⌘H is `role: 'hide'` and ⌘Q is `role: 'quit'`, and a plugin that gives a
+row action `shortcut: 'h'` gets the app hidden instead. Pick a letter the menu
+doesn't own — the Claude section's "Hide this session" is ⌘D for exactly this
+reason, and "Dismiss" is ⌘E.
 
 **Blur dismisses the panel — except over Settings.** Pasting a token means
 switching to a browser to copy it. Blur-to-hide threw away the URL and email you'd
@@ -311,6 +322,103 @@ wins.
 boards return 400 from the active-sprint endpoint; that's "no sprint", not an
 error.
 
+## The Claude Code plugin
+
+**Claude Code's own session file knows only `idle` and `busy`, and neither is
+the state worth being told about.** `~/.claude/sessions/<pid>.json` is written
+by every live session. A session that has stopped to ask you something reads as
+`busy`, exactly like one running a build — that was measured, not assumed: the
+status stays `busy` across a whole turn with a permission prompt up, and
+`statusUpdatedAt` does not move while it sits there. So the third state is
+derived, and `sessionState` in `shared/claude.ts` is where.
+
+**A transcript records a tool call when it is made, not when it returns.** That
+is the whole basis of the derivation: a call at the tail with no result after it
+is either a tool that is running or a question waiting on a person. The evidence
+it is a real signal is in the transcripts — an `AskUserQuestion` sat unanswered
+for 862 seconds, an `Edit` for 216.
+
+**`AskUserQuestion` and `ExitPlanMode` are certain; everything else is a
+guess.** Nothing is running that could answer those two, so they report
+immediately. Any other call has to age past `attentionSeconds` (45 by default)
+before it counts as waiting, because a permission prompt and a slow tool are the
+same two records on disk. **The false positive that buys is a build longer than
+the threshold showing as "needs you"** — that is the known cost of the read-only
+approach, and raising the number in Settings is the fix. `Notification` hooks
+would make it exact, at the price of writing to the user's global Claude config.
+
+**The row is the session name and the title `/resume` would list it under.**
+Claude Code writes an `ai-title` record — `{ type, aiTitle, sessionId }` — and
+rewrites it every turn, so the last one in the tail is the current one. That
+gives the rows the shape every other row in the app has, a key then a summary:
+three sessions in the same repo are indistinguishable by name and path alone. A
+session with no title yet falls back to its path, and the path stays in
+`keywords` either way so searching for the repo still finds it.
+
+**Transcripts are read once and then `stat`ed.** Reading the title means opening
+*every* session's transcript rather than only the busy ones, which was the thing
+that made a 5-second poll affordable. An idle session's transcript does not
+change, and neither does a blocked one's — so the tail is parsed only when the
+mtime moves, and the open call is cached alongside the title rather than re-read.
+The cache drops sessions that have ended; an id is never reused.
+
+**128KB of tail is roughly four times what is needed.** Measured across every
+live session: the furthest a last `ai-title` sat from EOF was 33KB. Two
+transcripts had none at all, which is what the path fallback is for — not a
+window that was too small.
+
+**Only the tail is read, and a half-line is dropped.** Results always follow
+their call, so a call inside the window has its result inside the window too —
+which is what makes a fixed 128KB tail sound rather than merely cheap. A record
+longer than the window loses an "attention" we might have inferred; it never
+invents one.
+
+**A dead pid is `ESRCH`, and only `ESRCH`.** `process.kill(pid, 0)` checks
+without delivering anything, and `EPERM` means the process is there and isn't
+ours — alive. Every crashed session leaves its file behind, and listing those
+would be listing sessions that cannot be gone back to.
+
+**A transcript lives at `projects/<cwd with every non-alphanumeric turned into a
+dash>/<session id>.jsonl`.** `/Users/x/.config/nvim` becomes
+`-Users-x--config-nvim`, double dash and all. A session whose transcript isn't
+where its cwd says — the IDE extension writes one of these — simply never
+reports as waiting, which beats scanning every project directory on a poll.
+
+**A session that has stopped recently reads as finished, and that leans on
+`statusUpdatedAt` being written on a transition rather than as a heartbeat.**
+Sessions idle for eight and thirteen days still carry stamps that old, which a
+heartbeat would have overwritten long ago — so the field really does mean "when
+this last crossed between busy and idle", and `now - changedAt` inside
+`completedMinutes` really does mean "a turn just ended here".
+
+**A freshly launched session has its status stamped at launch**, which without a
+guard would have it announcing a result it never produced for the whole window.
+`LAUNCH_SLACK_MS` is that guard: a session whose status has never moved more than
+a couple of seconds past its own start has not finished anything.
+
+**Dismissing a result is not muting a session.** The key is
+`<session id>@<finished at>`, so the same session finishing *again* is a
+different key and says so — which is the difference between acknowledging what
+you just read and never hearing from it again. `dismissCompletion` prunes both
+ways: entries whose session has ended, and that session's own earlier keys, since
+only its latest result can still be on screen. What survives is at most one key
+per running session.
+
+**Hiding a session is by id, so it lapses when the session ends.** A session id
+dies with the session, which is what keeps `config.hidden` from becoming a
+permanent blocklist of things that no longer exist. `hideSession` prunes every
+id whose session is gone each time another is added, so the list is bounded by
+what is actually running and there is no sweep to schedule and no second place
+for the rule to live.
+
+**Hiding outranks the rule that keeps a waiting session on screen.** The idle
+cutoff deliberately never hides a session that wants you; an explicit hide does,
+because the user said so and it only lasts as long as that session. The menu bar
+count leaves hidden sessions out for the same reason.
+
+**`CLAUDE_CONFIG_DIR` is honoured**, so the plugin can be pointed at a fixture
+the way `JT_HOME` points the rest of the app at one.
+
 ## Design tokens
 
 `styles.css` opens with the palette. Two rules that are easy to undo:
@@ -329,7 +437,7 @@ reach for it.
 ## Testing
 
 `npm test` covers pure logic only: `time`, `timer-logic`, `activities`, `stages`,
-`conn`, `worklog`, `palette`, `board`, `sections`, `layout`, `keys`. There
+`conn`, `worklog`, `palette`, `board`, `sections`, `layout`, `keys`, `claude`. There
 are no component or IPC tests — if you add a feature with real logic in it, put
 that logic in `src/shared/` and test it there rather than reaching for a
 rendering harness.

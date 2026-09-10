@@ -9,7 +9,9 @@
 import type { PluginView } from '@shared/plugin';
 import type { PluginId } from '@shared/ipc';
 import { jiraView } from './jira/view';
+import { claudeView } from './claude/view';
 
 export const VIEWS: Record<PluginId, PluginView<never>> = {
   jira: jiraView as PluginView<never>,
+  claude: claudeView as PluginView<never>,
 };
