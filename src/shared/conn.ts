@@ -13,7 +13,14 @@
  * rather than as a credential rejection.
  */
 
-export type ConnReason = 'ok' | 'unconfigured' | 'rejected' | 'unreachable';
+/**
+ * `checking` is the state before the first `getMyself` has answered. It exists
+ * because the panel now opens on launch, in front of a snapshot whose connection
+ * is simply not known yet — and every other reason is a *failure*, so borrowing
+ * one of them told a configured user their credentials were bad for as long as
+ * the round trip took, and bounced them to Settings on the way.
+ */
+export type ConnReason = 'checking' | 'ok' | 'unconfigured' | 'rejected' | 'unreachable';
 
 /** The fields the app cannot talk to JIRA without, in the order we report them. */
 export const CRED_FIELDS = ['baseUrl', 'email', 'apiToken'] as const;
@@ -97,9 +104,21 @@ export interface MyselfResult {
   error?: string;
 }
 
+/**
+ * The status dot's modifier class: green connected, red failed, and *neither*
+ * while the check is still out — a bare `.dot` is the neutral one, so a pending
+ * connection must not be painted with the failure colour.
+ */
+export function connDotClass(conn: MyselfResult): 'ok' | 'bad' | '' {
+  if (conn.ok) return 'ok';
+  return conn.reason === 'checking' ? '' : 'bad';
+}
+
 /** One line explaining a failed connection, for the palette's footer. */
 export function connMessage(conn: MyselfResult): string {
   switch (conn.reason) {
+    case 'checking':
+      return 'Checking your JIRA connection…';
     case 'ok':
       return conn.name ? `Connected as ${conn.name}` : 'Connected';
     case 'unconfigured':

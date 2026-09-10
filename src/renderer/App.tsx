@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { filterPalette, nextIndex } from '@shared/palette';
-import { connMessage } from '@shared/conn';
+import { connDotClass, connMessage } from '@shared/conn';
 import type { Snapshot } from '@shared/ipc';
 import { prettyAccelerator } from '@shared/keys';
 import { activeSeconds, formatClock } from '@shared/time';
@@ -81,6 +81,10 @@ export function App(): ReactNode {
   const greeted = useRef(false);
   useEffect(() => {
     if (greeted.current || !snapshot) return;
+    // `checking` is not an answer yet, so don't spend the one greeting on it:
+    // the panel opens before the first getMyself lands, and an unconfigured user
+    // would then never be shown the form.
+    if (snapshot.conn.reason === 'checking') return;
     greeted.current = true;
     if (snapshot.conn.reason === 'unconfigured') setScreen({ kind: 'settings' });
   }, [snapshot]);
@@ -305,7 +309,9 @@ export function App(): ReactNode {
         ? screen.key
         : snapshot.conn.ok
           ? 'Search your in-progress work…'
-          : 'Not connected — press ⌘, to set up';
+          : snapshot.conn.reason === 'checking'
+            ? 'Checking your JIRA connection…'
+            : 'Not connected — press ⌘, to set up';
 
   return (
     <div className="panel" ref={root} onKeyDown={onKeyDown}>
@@ -403,7 +409,7 @@ export function App(): ReactNode {
         >
           <MenuGlyph />
         </button>
-        <span className={`dot ${snapshot.conn.ok ? 'ok' : 'bad'}`} />
+        <span className={`dot ${connDotClass(snapshot.conn)}`} />
         {toast ? (
           <span className={`toast${toast.bad ? ' bad' : ''}`}>{toast.text}</span>
         ) : running ? (
@@ -446,6 +452,7 @@ function EmptyState({
   query: string;
   inOverlay: boolean;
 }): ReactNode {
+  if (snapshot.conn.reason === 'checking') return <strong>{connMessage(snapshot.conn)}</strong>;
   if (!snapshot.conn.ok) {
     return (
       <>

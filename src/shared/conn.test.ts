@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  connDotClass,
   connMessage,
   defaultConfig,
   missingCreds,
@@ -66,6 +67,12 @@ describe('reasonForStatus', () => {
 });
 
 describe('connMessage', () => {
+  // The panel opens before the first getMyself lands, and every other reason is a
+  // failure — so an unanswered check must not read as one.
+  it('says it is still checking before the first answer', () => {
+    expect(connMessage(conn({ reason: 'checking' }))).toBe('Checking your JIRA connection…');
+  });
+
   it('names the connected user', () => {
     expect(connMessage(conn({ ok: true, reason: 'ok', name: 'Ada' }))).toBe('Connected as Ada');
   });
@@ -82,5 +89,19 @@ describe('connMessage', () => {
   it('names the host it could not reach', () => {
     const msg = connMessage(conn({ reason: 'unreachable', baseUrl: 'https://acme.atlassian.net' }));
     expect(msg).toBe("Can't reach https://acme.atlassian.net");
+  });
+});
+
+describe('connDotClass', () => {
+  it('is green connected and red on every failure', () => {
+    expect(connDotClass(conn({ ok: true, reason: 'ok' }))).toBe('ok');
+    expect(connDotClass(conn({ reason: 'unconfigured' }))).toBe('bad');
+    expect(connDotClass(conn({ reason: 'rejected', status: 401 }))).toBe('bad');
+    expect(connDotClass(conn({ reason: 'unreachable' }))).toBe('bad');
+  });
+
+  // Neither colour: a pending check is not a rejection.
+  it('leaves the dot neutral while the check is out', () => {
+    expect(connDotClass(conn({ reason: 'checking' }))).toBe('');
   });
 });

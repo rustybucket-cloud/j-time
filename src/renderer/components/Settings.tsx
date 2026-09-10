@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import type { Snapshot } from '@shared/ipc';
-import { CRED_LABELS, connMessage, DEFAULT_HOTKEY } from '@shared/conn';
+import { connDotClass, CRED_LABELS, connMessage, DEFAULT_HOTKEY } from '@shared/conn';
 import { prettyAccelerator } from '@shared/keys';
 
 /**
@@ -60,8 +60,8 @@ export function Settings({
         e.stopPropagation();
       }}
     >
-      <div className={`banner${conn.ok ? '' : ' bad'}`}>
-        <span className={`dot ${conn.ok ? 'ok' : 'bad'}`} /> {connMessage(conn)}
+      <div className={`banner${connDotClass(conn) === 'bad' ? ' bad' : ''}`}>
+        <span className={`dot ${connDotClass(conn)}`} /> {connMessage(conn)}
       </div>
 
       {!snapshot.hotkeyRegistered && (

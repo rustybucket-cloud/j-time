@@ -28,7 +28,10 @@ let config: JiraConfig = defaultConfig();
 let state: TimerState = emptyState();
 let jira: JiraClient = createJira(config);
 
-let conn: MyselfResult = { ok: false, status: 0, reason: 'unconfigured', missing: [], baseUrl: null };
+// `checking` until the first getMyself answers. Later refreshes deliberately keep
+// the last known result instead of returning here, for the same reason a failed
+// fetch keeps the previous issues: a re-poll shouldn't unsettle what's on screen.
+let conn: MyselfResult = { ok: false, status: 0, reason: 'checking', missing: [], baseUrl: null };
 let boards: JiraBoard[] = [];
 let sprint: JiraSprint | null = null;
 let issues: JiraIssue[] = [];
