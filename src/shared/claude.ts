@@ -16,6 +16,7 @@
  */
 
 import type { Searchable } from './palette';
+import { formatDurationShort } from './time';
 
 /** What a session is doing, as the section groups them. */
 export type SessionState = 'attention' | 'busy' | 'completed' | 'idle';
@@ -277,6 +278,46 @@ export function buildSessionItems(
     // Longest wait first while waiting; most recent first everywhere else.
     return a.state === 'attention' ? b.forSeconds - a.forSeconds : a.forSeconds - b.forSeconds;
   });
+}
+
+/**
+ * The sessions as a caller with no screen reads them.
+ *
+ * Grouped by the same four states the section uses, and the wait is spelled out
+ * rather than badged: "waiting 14m on AskUserQuestion" is the whole point of the
+ * plugin, and it is the one thing a peer session cannot find out for itself.
+ */
+export function describeSessions(
+  sessions: ClaudeSession[],
+  now: number,
+  config: ClaudeConfig,
+  home = '',
+): string {
+  const items = buildSessionItems(sessions, now, config, home);
+  if (items.length === 0) return 'No Claude Code sessions are open.';
+
+  const lines: string[] = [];
+  let group: SessionState | null = null;
+  for (const item of items) {
+    if (item.state !== group) {
+      group = item.state;
+      lines.push(`${SUBSECTION_LABELS[item.state]}:`);
+    }
+    const wait = formatDurationShort(item.forSeconds);
+    const what =
+      item.state === 'attention' && item.session.open
+        ? `${item.session.open.tool}${item.session.open.detail ? ` (${item.session.open.detail})` : ''} for ${wait}`
+        : item.state === 'busy'
+          ? `working for ${wait}`
+          : item.state === 'completed'
+            ? `finished ${wait} ago`
+            : `idle ${wait}`;
+    lines.push(
+      `  ${item.session.name} — ${item.session.title ?? '(no title yet)'} · ` +
+        `${shortenPath(item.session.cwd, home)} · ${what}`,
+    );
+  }
+  return lines.join('\n');
 }
 
 /** How many sessions want you — what the menu bar counts. Hidden ones don't. */

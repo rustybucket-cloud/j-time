@@ -15,6 +15,9 @@ set -e
 cd "$(dirname "$0")/.."
 
 PORT=${MOCK_PORT:-4199}
+# A port of its own, so a sandbox run can't answer MCP calls meant for the real
+# j-time sitting in the menu bar — same reason JT_HOME exists.
+MCP_PORT=${JT_MCP_PORT:-4198}
 SANDBOX=${JT_SANDBOX:-/tmp/j-time-sandbox}
 SHOT="$1"
 
@@ -25,7 +28,10 @@ mkdir -p "$SANDBOX"
 # was never encrypted, which keeps the fixture readable and machine-independent.
 cat > "$SANDBOX/config.json" <<JSON
 {
-  "shell": { "hotkey": "Command+Shift+J" },
+  "shell": {
+    "hotkey": "Command+Shift+J",
+    "mcp": { "enabled": true, "port": $MCP_PORT }
+  },
   "layout": { "order": ["jira"], "collapsed": [], "pinsOff": [] },
   "plugins": {
     "jira": {
@@ -69,6 +75,8 @@ node -e '
   };
   require("fs").writeFileSync(process.argv[2], JSON.stringify(state, null, 2));
 ' "$NOW" "$SANDBOX/state.json"
+
+echo "MCP endpoint: http://localhost:$MCP_PORT/api/mcp"
 
 node scripts/mock-jira.mjs "$PORT" &
 MOCK=$!

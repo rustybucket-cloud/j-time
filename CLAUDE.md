@@ -22,7 +22,7 @@ three registration lines, and nothing in the shell learned what a session is.
 
 ```bash
 npm run dev        # electron-vite with renderer HMR
-npm test           # vitest, pure logic only (291 tests)
+npm test           # vitest, pure logic only (337 tests)
 npm run typecheck  # both projects — main/preload, then renderer
 npm run build      # typecheck + bundle into out/
 sh scripts/sandbox.sh   # the app against a mock JIRA, with scratch state
@@ -50,12 +50,14 @@ The split, in one line each:
   snapshot, the polling and the staleness rule. Knows nothing about worklogs or
   pull requests.
 - `src/main/plugin.ts` — the main-side contract. `snapshot()`, `refresh()`,
-  `commands`, `queries`, and optionally `menuBar()` / `trayMenu()`.
+  `commands`, `queries`, and optionally `mcp()` / `menuBar()` / `trayMenu()`.
 - `src/shared/plugin.ts` — what a plugin may put on screen: `Row`, `Badge`,
   `Glyph`, `Ctx`, `PluginView`.
 - `src/shared/sections.ts` — the root list: sections, subsections, pinning, the
   top hit, and cursor movement. Pure and tested.
 - `src/shared/layout.ts` — the user's arrangement. Pure and tested.
+- `src/shared/mcp.ts` — the MCP endpoint's framing and tool names. Pure and
+  tested; `src/main/mcp.ts` is the socket.
 - `src/{main,renderer}/plugins/<id>/` — one plugin, two halves.
 
 **Adding a plugin is four edits**: `src/main/plugins/index.ts`,
@@ -122,6 +124,86 @@ message on that section's header. `refreshPlugin` also skips a plugin that isn't
 configured — an app with no credentials is unset, not broken, and reporting it
 as a fetch failure paints a red error on a section whose real problem is that
 nobody filled its form in.
+
+## The MCP endpoint
+
+**The shell owns one port and every plugin's tools are on it.** `src/main/mcp.ts`
+is the HTTP server; `src/shared/mcp.ts` is the JSON-RPC framing, the names and
+the sanitising, pure and tested. A compiled-in plugin declares `mcp(): McpTool[]`
+in `src/main/plugin.ts`; a runtime plugin declares `tools` in its `main.js`. The
+shell namespaces them — `<plugin>_<tool>`, dashes in an id becoming underscores —
+so two plugins may both call something `status`, and `resolveTool` takes the
+**longest** matching prefix because `claude` and `claude-code` would otherwise
+both claim `claude_code_sessions`.
+
+**Served by the app itself, not a stdio sidecar.** j-time is already the process
+holding the credentials and the only writer to `state.json`. A sidecar would be a
+second writer racing this one, and it could not see a timer running in here. This
+is the same reasoning that put the endpoint inside Next in the predecessor.
+
+**Loopback, POST-only, and the Origin header is checked.** There is no session to
+resume and no server-initiated stream, so GET and DELETE are 405 rather than left
+hanging — a client waiting on an SSE stream that never opens looks exactly like a
+server that is down. A browser on any page can POST to localhost but cannot forge
+`Origin`, so a request with a *wrong* origin is refused and one with none at all
+is a local client, which is every MCP client there is.
+
+**`/mcp` and `/api/mcp` both work.** The second is where the predecessor served
+it, and a registration pointing there is somebody's working setup.
+
+**`listChanged` is false even though the list does change.** Reloading the
+plugins directory changes the tools, but the capability promises a
+*notification*, and a POST-only transport has nothing to send one down.
+
+**A tool is not a command with a longer name.** A command is a keystroke on a row
+the user is looking at, so `start` takes the key it was pressed on. A tool is
+called by something that cannot see the screen: named arguments, prose answers,
+and read-only tools that no row would ever need. `argStr` throws, and the shell
+turns that into a failed *tool* rather than a broken server — a schema is a hint
+when the caller is a language model.
+
+**The prose is in `shared/report.ts` and `describeSessions`, and it is tested.**
+The text *is* the interface, which is why the three time quantities are named
+separately in it — "tracked here", "filed", "JIRA has". A summary that collapsed
+them would have the caller file time JIRA already has.
+
+**`callMcpTool` refuses a plugin that isn't configured**, saying which form to
+fill in, for the same reason `refreshPlugin` skips it: an app with no credentials
+is unset, not broken, and a missing token surfacing as a deep client error is the
+one failure nobody can act on.
+
+**The user can switch any tool off, and the shell stores the exceptions.**
+`mcp.disabled` in the shell config holds *qualified* names, the way `layout`
+holds `collapsed` and `pinsOff` — so a plugin that gains a tool in an upgrade
+arrives with it on, which is the only behaviour that doesn't need every user to
+go and find it. Nothing prunes a name whose tool isn't loaded: a `main.js`
+mid-edit unregisters its tools for an afternoon, and turning one back on behind
+the user would be worse than a stale entry nobody sees. A switched-off tool is
+absent from `tools/list` **and** refused by name, saying it was switched off —
+a client holding a list from before the change would otherwise get "no such
+tool", which reads as a bug rather than a setting.
+
+**The endpoint has its own settings page, `components/McpSettings.tsx`.** The
+shell's own page keeps a one-line summary and a way in; the tool list is as long
+as the plugins make it — JIRA alone has ten — and that under the hotkey would
+push the plugin arrangement off the bottom of a panel deliberately the size of a
+palette. It is the shell's second screen, so `App`'s `Screen` union gained `mcp`
+and `appCommands` takes a `ShellScreens` — *not* a new verb on `Ctx`, which is
+the plugin contract and has no business carrying "open the shell's settings".
+
+**Everything on that page saves on the click except the port.** A checkbox
+ticked halfway through typing a port must not take the endpoint down on `419`,
+so the port is applied by its own Save row and the toggles send the stored one.
+
+**A runtime plugin's tools are data, but its handlers are closures.** Unlike a
+row's `run`, nothing has to cross the bridge — the file already runs in the main
+process. They are sanitised once at load rather than per call, because `mcp()` is
+asked on every snapshot. A tool with no `run` is dropped: a name in the list that
+always fails is worse than a name that isn't there.
+
+**The sandbox gets its own MCP port (4198).** Same reason `JT_HOME` exists — a
+sandbox run answering calls meant for the real j-time would be a mock board
+replying about your actual board.
 
 ## The one important design rule
 
@@ -463,7 +545,7 @@ reach for it.
 
 `npm test` covers pure logic only: `time`, `timer-logic`, `activities`, `stages`,
 `conn`, `worklog`, `palette`, `board`, `sections`, `layout`, `keys`, `claude`,
-`runtime`. There
+`runtime`, `mcp`, `report`. There
 are no component or IPC tests — if you add a feature with real logic in it, put
 that logic in `src/shared/` and test it there rather than reaching for a
 rendering harness.
@@ -484,6 +566,11 @@ saves a picture and quits; `JT_CAPTURE_KEYS="cmd+k,Enter"` drives it there first
 `JT_CAPTURE_DELAY=20000` waits longer before the shot, for a plugin slower than
 a fetch — the default 1.8s catches the panel mid-refresh, which reads exactly
 like a truncated list.
+
+`JT_CAPTURE_KEYS` also takes `click:x:y` and `scroll:x:y:ticks`. The scroll one
+is what makes a settings page taller than the panel reviewable at all — the
+arrows belong to the search field, not to the scroller, so there is no other way
+down the page.
 
 Two things about `sendInputEvent`, both established the hard way:
 

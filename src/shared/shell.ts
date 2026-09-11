@@ -7,16 +7,22 @@
  */
 
 import type { LayoutState } from './layout';
+import { defaultMcpConfig, type McpConfig, type McpStatus } from './mcp';
 
 export const DEFAULT_HOTKEY = 'Command+Shift+J';
 
 export interface ShellConfig {
   /** Accelerator that toggles the palette. */
   hotkey: string;
+  /**
+   * The MCP endpoint, which belongs to the shell for the same reason the hotkey
+   * does: there is one port, and every plugin's tools are served on it.
+   */
+  mcp: McpConfig;
 }
 
 export function defaultShellConfig(): ShellConfig {
-  return { hotkey: DEFAULT_HOTKEY };
+  return { hotkey: DEFAULT_HOTKEY, mcp: defaultMcpConfig() };
 }
 
 /** What the renderer needs to know about an installed plugin before drawing it. */
@@ -49,4 +55,6 @@ export interface ShellSnapshot {
   hotkeyRegistered: boolean;
   /** The directory plugins are installed in, so Settings can hand it to the user. */
   pluginsDir: string;
+  /** Whether the MCP endpoint is up, and which tools are on it. */
+  mcp: McpStatus;
 }

@@ -73,8 +73,8 @@ The first launch opens straight to Settings. Each plugin is set up separately.
 Also there: the activity labels you file time under, and the rounding increment.
 The token is stored encrypted with Electron's safeStorage.
 
-The app's own settings — the hotkey, and the order of the plugins — are on the
-same screen, reached with `⌘,`.
+The app's own settings — the hotkey, the order of the plugins, and a way into
+the MCP server's page — are on the same screen, reached with `⌘,`.
 
 ## Plugins
 
@@ -91,6 +91,31 @@ what it hands back is checked and drawn by the app, so a plugin never draws
 anything and every section gets the same keys, search and pinning. JIRA and
 Claude Code are compiled in rather than loaded from the folder — they have
 screens and pickers the data-only contract doesn't cover.
+
+## Let Claude Code use it
+
+j-time serves an MCP endpoint on localhost, and every plugin's tools are on it:
+the board and the clock (`jira_current_timer`, `jira_start_timer`,
+`jira_file_time`, …), which Claude Code sessions are waiting on you
+(`claude_list_sessions`), and whatever your own plugins declare. So the session
+you're already talking to can start the timer on the story you just described,
+and file the time when you're done.
+
+It's on by default, on port 4100. Type **mcp** in the palette for its page —
+the toggle, the port, the command to register it, and a switch per tool:
+
+```
+claude mcp add --transport http j-time http://localhost:4100/api/mcp
+```
+
+Every plugin's tools start on, grouped under that plugin on the page, each with
+what it does. Switch one off and it isn't offered to a client at all — which is
+what you'd want for the three that write to JIRA if you'd rather do those
+yourself. They're marked *writes*, and flagged to your client as destructive, so
+it asks before one runs.
+
+Loopback only: nothing outside this machine can reach it. A plugin of your own
+adds tools the same way it adds rows; see `AGENTS.md` in the plugins folder.
 
 ## Use it
 

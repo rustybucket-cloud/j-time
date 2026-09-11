@@ -11,7 +11,17 @@ import type { Ctx, Row } from '@shared/plugin';
 
 export const COMMANDS_SECTION = 'shell';
 
-export function appCommands(ctx: Ctx): Row[] {
+/**
+ * The shell's own screens, which no plugin owns and so are not in `Ctx`.
+ *
+ * `Ctx` is the plugin contract; putting "open the MCP page" on it would hand
+ * every plugin a verb about the shell's own settings.
+ */
+export interface ShellScreens {
+  openMcp: () => void;
+}
+
+export function appCommands(ctx: Ctx, screens: ShellScreens): Row[] {
   return [
     {
       id: 'app:settings',
@@ -20,6 +30,13 @@ export function appCommands(ctx: Ctx): Row[] {
       keywords: ['config', 'preferences', 'plugins'],
       badges: [{ text: '⌘,', kind: 'key' }],
       run: () => ctx.openSettings(''),
+    },
+    {
+      id: 'app:mcp',
+      title: 'MCP server…',
+      subtitle: 'The endpoint Claude Code calls, and which tools it may use',
+      keywords: ['mcp', 'claude', 'tools', 'port', 'api', 'agent'],
+      run: screens.openMcp,
     },
     {
       id: 'app:refresh',

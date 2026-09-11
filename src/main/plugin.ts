@@ -13,6 +13,7 @@
 
 import type { MenuItemConstructorOptions } from 'electron';
 import type { ActionResult, QueryResult } from '@shared/plugin';
+import type { ToolDeclaration } from '@shared/mcp';
 import type { SecretField } from './store';
 
 export type Command = (args: unknown[]) => Promise<ActionResult> | ActionResult;
@@ -59,6 +60,20 @@ export interface MainPlugin<S = unknown, C = Record<string, unknown>> {
   refresh(force: boolean): Promise<ActionResult>;
   commands: Record<string, Command>;
   queries?: Record<string, Query>;
+  /**
+   * The tools this plugin puts on the MCP endpoint, if any.
+   *
+   * Same idea as `commands`, addressed the same way, and deliberately not the
+   * same list: a command is a keystroke on a row the user is already looking at,
+   * so `start` with the key it was pressed on is all it needs. A tool is called
+   * by something that cannot see the screen, which is why it takes named
+   * arguments, why it answers in prose, and why the read-only ones exist at all —
+   * nothing in the palette needs a command that only tells you what is running.
+   *
+   * Called on every snapshot, so it must be a constant rather than built each
+   * time. The shell namespaces the names and assembles the wire format.
+   */
+  mcp?(): McpTool[];
 
   /**
    * What this plugin wants in the menu bar, if anything.
@@ -72,6 +87,18 @@ export interface MainPlugin<S = unknown, C = Record<string, unknown>> {
   menuBar?(): MenuBarState | null;
   /** This plugin's own items in the menu bar's context menu. */
   trayMenu?(): MenuItemConstructorOptions[];
+}
+
+/**
+ * One tool, with the function behind it.
+ *
+ * `run` may answer with a string, which is the text the caller gets, or with the
+ * `ActionResult` a command already returns — so wiring a tool onto an existing
+ * command is one line, and a failure reads as a failed tool rather than a broken
+ * server.
+ */
+export interface McpTool extends ToolDeclaration {
+  run(args: Record<string, unknown>): Promise<string | ActionResult> | string | ActionResult;
 }
 
 export interface MenuBarState {
@@ -91,4 +118,24 @@ export function str(args: unknown[], at: number): string {
 export function optionalStr(args: unknown[], at: number): string | undefined {
   const value = args[at];
   return typeof value === 'string' ? value : undefined;
+}
+
+/**
+ * Pull a named argument out of a tool call.
+ *
+ * Throwing is right here: the shell turns it into a failed *tool*, message and
+ * all, which is the one thing a model can act on. A schema says an argument is
+ * required, but the caller is a language model and the schema is a hint.
+ */
+export function argStr(args: Record<string, unknown>, key: string): string {
+  const value = args[key];
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new Error(`Missing required argument: ${key}`);
+  }
+  return value.trim();
+}
+
+export function optionalArgStr(args: Record<string, unknown>, key: string): string | undefined {
+  const value = args[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }

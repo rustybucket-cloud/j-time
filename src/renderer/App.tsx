@@ -17,6 +17,7 @@ import { viewFor } from './plugins';
 import { appCommands, COMMANDS_SECTION } from './commands';
 import { List } from './components/List';
 import { ShellSettings } from './components/ShellSettings';
+import { McpSettings } from './components/McpSettings';
 import { useAutoHeight, useNow, useReopened, useSnapshot } from './hooks';
 
 interface Toast {
@@ -27,10 +28,14 @@ interface Toast {
   transient?: boolean;
 }
 
-/** `plugin: ''` is the shell's own settings; a plugin id is that plugin's form. */
+/**
+ * `plugin: ''` is the shell's own settings; a plugin id is that plugin's form.
+ * `mcp` is the shell's second page — the endpoint, and its tools.
+ */
 type Screen =
   | { kind: 'list' }
   | { kind: 'settings'; plugin: string }
+  | { kind: 'mcp' }
   | { kind: 'plugin'; screen: PluginScreen };
 
 export function App(): ReactNode {
@@ -95,9 +100,10 @@ export function App(): ReactNode {
   }, [snapshot]);
 
   // Settings is a form, and a form that vanishes when you switch apps to copy
-  // something out of a browser is a form you cannot fill in.
+  // something out of a browser is a form you cannot fill in. The MCP page is
+  // one too — its whole reason to exist is a port you paste into a terminal.
   useEffect(() => {
-    void window.jt.setDismissOnBlur(screen.kind !== 'settings');
+    void window.jt.setDismissOnBlur(screen.kind !== 'settings' && screen.kind !== 'mcp');
   }, [screen.kind]);
 
   useReopened(() => {
@@ -172,6 +178,17 @@ export function App(): ReactNode {
     };
   }, [snapshot, now, reset]);
 
+  /** The shell's own pages, which are not a plugin's and so are not in `ctx`. */
+  const shellScreens = useMemo(
+    () => ({
+      openMcp: () => {
+        setOverlays([]);
+        setScreen({ kind: 'mcp' });
+      },
+    }),
+    [],
+  );
+
   const layout = snapshot?.shell.layout;
   const pluginIds = useMemo(
     () => (snapshot?.shell.plugins ?? []).map((p) => p.id),
@@ -212,7 +229,7 @@ export function App(): ReactNode {
       ...out.flatMap((section) => {
         return viewFor(section.id).commands?.(snapshot.plugins[section.id] as never, ctx) ?? [];
       }),
-      ...appCommands(ctx),
+      ...appCommands(ctx, shellScreens),
     ];
     out.push({
       id: COMMANDS_SECTION,
@@ -223,7 +240,7 @@ export function App(): ReactNode {
     });
 
     return out;
-  }, [snapshot, ctx, layout, pluginIds]);
+  }, [snapshot, ctx, layout, pluginIds, shellScreens]);
 
   const view = useMemo(
     () => (overlay ? buildOverlay(overlay.rows, query) : buildPalette(sections, query)),
@@ -271,7 +288,10 @@ export function App(): ReactNode {
     return viewFor(sectionId).section(snapshot.plugins[sectionId] as never, ctx).actions ?? [];
   };
 
-  const menuRows = useMemo(() => (ctx ? appCommands(ctx) : []), [ctx]);
+  const menuRows = useMemo(
+    () => (ctx ? appCommands(ctx, shellScreens) : []),
+    [ctx, shellScreens],
+  );
 
   const back = () => {
     if (overlays.length > 0) setOverlays((stack) => stack.slice(0, -1));
@@ -411,7 +431,9 @@ export function App(): ReactNode {
     ? overlay.placeholder
     : screen.kind === 'settings'
       ? 'Settings'
-      : screen.kind === 'plugin'
+      : screen.kind === 'mcp'
+        ? 'MCP server'
+        : screen.kind === 'plugin'
         ? (screen.screen.arg ?? screen.screen.view)
         : 'Search your work…';
 
@@ -462,8 +484,11 @@ export function App(): ReactNode {
             snapshot={snapshot}
             onSaved={(text) => setToast({ text })}
             onConfigure={(plugin) => setScreen({ kind: 'settings', plugin })}
+            onOpenMcp={shellScreens.openMcp}
           />
         )
+      ) : screen.kind === 'mcp' ? (
+        <McpSettings snapshot={snapshot} onSaved={(text) => setToast({ text })} />
       ) : screen.kind === 'plugin' ? (
         (pluginScreen?.screen?.(
           snapshot.plugins[screen.screen.plugin] as never,

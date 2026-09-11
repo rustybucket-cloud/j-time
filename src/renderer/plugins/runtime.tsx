@@ -58,7 +58,7 @@ function Settings({
   snapshot: RuntimeSnapshot;
   onSaved: (message: string) => void;
 }): ReactNode {
-  const { id, fields, config, secretsSet, dir, loadError } = snapshot;
+  const { id, fields, config, secretsSet, dir, tools, loadError } = snapshot;
   const [values, setValues] = useState<Record<string, string>>(() => initial(fields, config));
   const [saving, setSaving] = useState(false);
 
@@ -123,6 +123,15 @@ function Settings({
 
       {fields.length === 0 && !loadError && (
         <div className="banner">This plugin has nothing to set up.</div>
+      )}
+
+      {tools.length > 0 && (
+        <div className="field">
+          <label>MCP tools</label>
+          <div className="note">
+            On the endpoint when it is on: {tools.join(', ')}.
+          </div>
+        </div>
       )}
 
       <div className="field">

@@ -14,18 +14,22 @@ export function ShellSettings({
   snapshot,
   onSaved,
   onConfigure,
+  onOpenMcp,
 }: {
   snapshot: Snapshot;
   onSaved: (message: string) => void;
   onConfigure: (plugin: string) => void;
+  onOpenMcp: () => void;
 }): ReactNode {
-  const { config, layout, plugins, hotkeyRegistered, pluginsDir } = snapshot.shell;
+  const { config, layout, plugins, hotkeyRegistered, pluginsDir, mcp } = snapshot.shell;
   const [hotkey, setHotkey] = useState(config.hotkey);
   const [saving, setSaving] = useState(false);
 
   const ids = plugins.map((p) => p.id);
   const sections = resolveLayout(layout, ids);
   const meta = (id: string) => plugins.find((p) => p.id === id);
+
+  const toolsOn = mcp.tools.filter((t) => t.enabled).length;
 
   async function saveHotkey(): Promise<void> {
     setSaving(true);
@@ -71,6 +75,32 @@ export function ShellSettings({
         <div className="note">
           Electron accelerator, e.g. Command+Shift+J — currently{' '}
           {prettyAccelerator(hotkey || DEFAULT_HOTKEY)}.
+        </div>
+      </div>
+
+      <div className="field">
+        <label>
+          MCP endpoint
+          {mcp.listening ? (
+            <span className="pill accent">listening</span>
+          ) : (
+            <span className="pill">off</span>
+          )}
+        </label>
+        <div className="note">
+          The endpoint Claude Code calls, on {mcp.url.replace('http://', '')} — and which of
+          your plugins’ tools it may use.
+        </div>
+        {mcp.error && <div className="banner warn">{mcp.error}</div>}
+        <div className="copy-row">
+          <span className="path">
+            {mcp.tools.length === 0
+              ? 'No plugin has registered a tool yet'
+              : `${toolsOn} of ${mcp.tools.length} tools on`}
+          </span>
+          <button type="button" onClick={onOpenMcp}>
+            MCP server…
+          </button>
         </div>
       </div>
 

@@ -17,6 +17,17 @@ import type { ActionResult, QueryResult } from '@shared/plugin';
 import type { PluginSnapshots, Snapshot } from '@shared/ipc';
 import { freezeOrder, type LayoutState } from '@shared/layout';
 import type { PluginMeta, ShellConfig } from '@shared/shell';
+import {
+  defaultMcpConfig,
+  mcpUrl,
+  resolveTool,
+  toolEnabled,
+  toolSpec,
+  type McpStatus,
+  type McpToolInfo,
+  type ToolResult,
+  type ToolSpec,
+} from '@shared/mcp';
 import type { MainPlugin, MenuBarState } from './plugin';
 import { PLUGINS_DIR, readConfig, writeConfig, type RootConfig, type SecretFields } from './store';
 
@@ -32,9 +43,20 @@ interface Registered {
 }
 
 const registry = new Map<string, Registered>();
-let root: RootConfig = { shell: { hotkey: '' }, layout: { order: [], collapsed: [], pinsOff: [] }, plugins: {} };
+let root: RootConfig = {
+  shell: { hotkey: '', mcp: defaultMcpConfig() },
+  layout: { order: [], collapsed: [], pinsOff: [] },
+  plugins: {},
+};
 let hotkeyRegistered = true;
 let loaded = false;
+let mcp: McpStatus = {
+  listening: false,
+  port: defaultMcpConfig().port,
+  url: mcpUrl(defaultMcpConfig().port),
+  error: null,
+  tools: [],
+};
 
 export function register(plugin: MainPlugin): void {
   registry.set(plugin.id, {
@@ -97,6 +119,11 @@ export function snapshot(): Snapshot {
       plugins: [...registry.values()].map((r) => ({ ...r.meta })),
       hotkeyRegistered,
       pluginsDir: PLUGINS_DIR,
+      // The tool list comes from the plugins rather than from the server, so
+      // the settings page can list what *would* be served while the endpoint is
+      // off — and every tool, not only the ones switched on, since otherwise
+      // there is nowhere to switch one back on from.
+      mcp: { ...mcp, tools: mcpToolInfo() },
     },
     plugins: slices as unknown as PluginSnapshots,
   };
@@ -258,7 +285,10 @@ export async function savePluginConfig(
 }
 
 export async function saveShellConfig(patch: Partial<ShellConfig>): Promise<ActionResult> {
-  root = { ...root, shell: { ...root.shell, ...patch } };
+  // `mcp` is merged rather than replaced, so a form that only means to flip the
+  // toggle doesn't have to resend the port to keep it.
+  const next: ShellConfig = { ...root.shell, ...patch, mcp: { ...root.shell.mcp, ...patch.mcp } };
+  root = { ...root, shell: next };
   const written = await persist();
   if (!written.ok) return written;
   events.emit('shell-config', root.shell);
@@ -288,6 +318,119 @@ export function shellConfig(): ShellConfig {
 export function setHotkeyRegistered(ok: boolean): void {
   hotkeyRegistered = ok;
   emit();
+}
+
+/**
+ * The endpoint reporting whether it came up.
+ *
+ * Same shape as the hotkey: the shell holds the fact and the renderer says so. A
+ * port already taken is the hotkey problem all over again — the only symptom is
+ * a client that can't connect, which reads as a broken app rather than as a
+ * number to change.
+ */
+export function setMcpStatus(next: McpStatus): void {
+  mcp = next;
+  emit();
+}
+
+export function mcpConfig(): ShellConfig['mcp'] {
+  return root.shell.mcp;
+}
+
+interface RegisteredTool {
+  plugin: string;
+  tool: string;
+  /** False when the user has switched this one off. It is still registered. */
+  enabled: boolean;
+  spec: ToolSpec;
+  readOnly: boolean;
+  destructive: boolean;
+}
+
+/**
+ * Every plugin's tools, namespaced, in registration order.
+ *
+ * Built here rather than in the server for the same reason the snapshot is: a
+ * plugin mounted since launch has to appear without anything restarting, and
+ * `reloadRuntimePlugins` changes the registry, not the socket.
+ */
+export function mcpTools(): RegisteredTool[] {
+  const disabled = root.shell.mcp.disabled ?? [];
+  const out: RegisteredTool[] = [];
+  for (const { plugin } of registry.values()) {
+    for (const tool of plugin.mcp?.() ?? []) {
+      const spec = toolSpec(plugin.id, plugin.title, tool);
+      out.push({
+        plugin: plugin.id,
+        tool: tool.name,
+        enabled: toolEnabled(disabled, spec.name),
+        spec,
+        readOnly: tool.readOnly === true,
+        destructive: tool.destructive === true,
+      });
+    }
+  }
+  return out;
+}
+
+/** What `tools/list` advertises: the ones the user has left on. */
+export function mcpServedTools(): ToolSpec[] {
+  return mcpTools()
+    .filter((t) => t.enabled)
+    .map((t) => t.spec);
+}
+
+/** The same list as the settings page reads it. */
+export function mcpToolInfo(): McpToolInfo[] {
+  return mcpTools().map((t) => ({
+    name: t.spec.name,
+    plugin: t.plugin,
+    section: registry.get(t.plugin)?.plugin.title ?? t.plugin,
+    description: t.spec.description,
+    enabled: t.enabled,
+    readOnly: t.readOnly,
+    destructive: t.destructive,
+  }));
+}
+
+/**
+ * Run a tool by its qualified name.
+ *
+ * Null means no such tool, which is a protocol error rather than a tool that
+ * failed — the caller asked for something that isn't there. Everything else is a
+ * result, including a throw: a plugin's bad day belongs in the text the model
+ * reads, not in the JSON-RPC envelope.
+ */
+export async function callMcpTool(
+  name: string,
+  args: Record<string, unknown>,
+): Promise<ToolResult | null> {
+  const resolved = resolveTool(name, pluginIds());
+  const entry = resolved ? registry.get(resolved.plugin) : undefined;
+  const tool = entry?.plugin.mcp?.().find((t) => t.name === resolved?.tool);
+  if (!tool) return null;
+
+  // A tool the user switched off is absent from `tools/list`, but a client
+  // holding a list from before the change would otherwise get "no such tool" —
+  // which reads as a bug rather than as a setting somebody chose.
+  if (!toolEnabled(root.shell.mcp.disabled ?? [], name)) {
+    return { text: `${name} is switched off in j-time's settings.`, isError: true };
+  }
+
+  // A tool on a plugin nobody has set up yet would fail deep inside a client
+  // with whatever error a missing token produces. Say which form to fill in.
+  if (!entry!.plugin.configured()) {
+    return { text: `${entry!.plugin.title} is not set up yet in j-time.`, isError: true };
+  }
+
+  try {
+    const result = await tool.run(args);
+    if (typeof result === 'string') return { text: result };
+    if (result.ok) return { text: result.message ?? 'Done' };
+    return { text: result.error, isError: true };
+  } catch (e: unknown) {
+    return { text: e instanceof Error ? e.message : String(e), isError: true };
+  }
 }
 
 /** The first plugin with something to say in the menu bar. */

@@ -17,6 +17,7 @@ import {
   attentionCount,
   buildSessionItems,
   defaultClaudeConfig,
+  describeSessions,
   type ClaudeConfig,
   type ClaudeSession,
   type ClaudeSnapshot,
@@ -89,6 +90,28 @@ export const plugin: MainPlugin<ClaudeSnapshot, ClaudeConfig> = {
       return error ? { ok: false, error } : { ok: true, message: `Opened ${cwd}` };
     },
   },
+
+  /**
+   * One tool, and it only reads.
+   *
+   * The plugin owns no credentials and writes nothing, so there is nothing here
+   * to act on — and the read is worth exposing precisely because a session
+   * cannot see its peers: the file it would have to interpret says `busy` for a
+   * build and for a permission prompt alike, and `sessionState` is the rule that
+   * tells them apart.
+   */
+  mcp: () => [
+    {
+      name: 'list_sessions',
+      readOnly: true,
+      description:
+        'Every Claude Code session open on this machine, grouped by what it is doing: ' +
+        'waiting on the user, working, just finished, or idle. A waiting session shows what ' +
+        'it is blocked on and for how long — derived from its transcript, since the session ' +
+        "file itself says only 'busy'. Sessions the user hid are left out.",
+      run: () => describeSessions(sessions, Date.now(), config, os.homedir()),
+    },
+  ],
 
   /**
    * A count, and only when it isn't zero.

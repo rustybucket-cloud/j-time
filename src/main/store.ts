@@ -19,6 +19,7 @@ import type { TimerState } from '@shared/types';
 import { emptyState, normalizeState } from '@shared/timer-logic';
 import { defaultLayout, type LayoutState } from '@shared/layout';
 import { defaultShellConfig, type ShellConfig } from '@shared/shell';
+import { defaultMcpConfig } from '@shared/mcp';
 
 /**
  * `JT_HOME` redirects everything to a scratch directory. That's what makes
@@ -225,8 +226,23 @@ export async function readConfig(secrets: SecretFields): Promise<RootConfig> {
     if (!(id in plugins)) plugins[id] = raw;
   }
 
+  const shell = (stored.shell ?? {}) as Partial<ShellConfig>;
   return {
-    shell: { ...defaultShellConfig(), ...((stored.shell ?? {}) as Partial<ShellConfig>) },
+    shell: {
+      ...defaultShellConfig(),
+      ...shell,
+      // The one nested section in here, so the spread above would replace it
+      // whole: a file written before the endpoint existed, or one that only says
+      // `enabled: false`, would otherwise come back with no port at all.
+      mcp: {
+        ...defaultMcpConfig(),
+        ...(shell.mcp ?? {}),
+        // Hand-edited, or written by a version that had no per-tool switches.
+        disabled: Array.isArray(shell.mcp?.disabled)
+          ? shell.mcp.disabled.filter((n): n is string => typeof n === 'string')
+          : [],
+      },
+    },
     layout: { ...defaultLayout(), ...((stored.layout ?? {}) as Partial<LayoutState>) },
     plugins,
   };

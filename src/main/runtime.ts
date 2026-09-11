@@ -19,6 +19,7 @@ import { promises as fs } from 'fs';
 import { createRequire } from 'module';
 import path from 'path';
 import type { ActionResult } from '@shared/plugin';
+import { qualify, sanitiseDeclarations } from '@shared/mcp';
 import {
   emptyRuntimeContent,
   publicConfig,
@@ -30,7 +31,7 @@ import {
   type RuntimeField,
   type RuntimeSnapshot,
 } from '@shared/runtime';
-import type { Command, MainPlugin, MenuBarState, PluginHost } from './plugin';
+import type { Command, MainPlugin, McpTool, MenuBarState, PluginHost } from './plugin';
 import * as shell from './shell';
 import { PLUGINS_DIR } from './store';
 
@@ -55,6 +56,7 @@ interface RuntimeModule {
   configure?: unknown;
   refresh?: unknown;
   commands?: unknown;
+  tools?: unknown;
 }
 
 const DEFAULT_REFRESH_MS = 60_000;
@@ -115,6 +117,46 @@ function adapt(id: string, dir: string, mod: RuntimeModule | null, loadError: st
     }
   }
 
+  /**
+   * The plugin's MCP tools.
+   *
+   * Declared as data and checked like everything else it returns, but the
+   * function behind one is a real closure: a runtime plugin's code runs in this
+   * process, so unlike a row's `run` there is no bridge for it to fail to cross.
+   *
+   * Built once, at load, rather than per call — `mcp()` is asked on every
+   * snapshot, and re-sanitising a list that cannot have changed since `require`
+   * would be work done a few times a second for nothing.
+   */
+  const tools: McpTool[] = [];
+  if (mod) {
+    const declared = Array.isArray(mod.tools) ? mod.tools : [];
+    const byName = new Map(
+      declared
+        .filter((t): t is Record<string, unknown> => typeof t === 'object' && t !== null)
+        .map((t) => [t.name, t] as const),
+    );
+    for (const decl of sanitiseDeclarations(mod.tools)) {
+      const run = fn(byName.get(decl.name)?.run);
+      // A tool with nothing behind it is dropped rather than advertised: a name
+      // in the list that always fails is worse than a name that isn't there.
+      if (!run) continue;
+      tools.push({
+        ...decl,
+        run: async (args) => {
+          const result = await run(args, runtimeHost, config);
+          if (typeof result === 'string') return result;
+          if (typeof result === 'object' && result !== null && 'ok' in result) {
+            return result as ActionResult;
+          }
+          // Anything else is the plugin's own data, which the caller is a
+          // language model reading text — so JSON is the honest rendering.
+          return result === undefined || result === null ? 'Done' : JSON.stringify(result, null, 2);
+        },
+      });
+    }
+  }
+
   const snapshot = (): RuntimeSnapshot => ({
     id,
     title,
@@ -123,6 +165,7 @@ function adapt(id: string, dir: string, mod: RuntimeModule | null, loadError: st
     ...publicConfig(config, fields),
     configured: configured(),
     content,
+    tools: tools.map((t) => qualify(id, t.name)),
     loadError,
   });
 
@@ -162,6 +205,7 @@ function adapt(id: string, dir: string, mod: RuntimeModule | null, loadError: st
       return { ok: true };
     },
     commands,
+    mcp: () => tools,
     menuBar: (): MenuBarState | null =>
       content.menuBar
         ? { title: content.menuBar.title, tooltip: content.menuBar.tooltip ?? title, live: false }

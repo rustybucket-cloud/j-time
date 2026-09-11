@@ -83,6 +83,7 @@ module.exports = {
 | `configure(config, host)` | | Called at startup and after every save, before the next refresh. Optional. |
 | `refresh(config, host)` | → content | Required. Return `{ rows, actions?, menuBar? }`, or just an array of rows. May be async. Throwing puts the message on the section header and leaves the previous rows up. |
 | `commands` | object | Functions rows can name: `(args, host, config)`. Return a string for a toast, `{ ok: false, error }` to complain, or nothing. |
+| `tools` | array | What this plugin puts on j-time's MCP endpoint. See *MCP tools* below. |
 
 `host` is `{ dir, refresh }`: `dir` is the plugin's own folder, for anything it
 wants to keep; `refresh()` asks the app to run `refresh` again now, which is
@@ -127,6 +128,50 @@ A `secret` field is encrypted on disk and never sent to the form; the form
 shows whether one is set, and leaving it blank keeps the stored one. Numbers
 arrive in `config` as numbers. Config lives in `~/.j-time/config.json` under
 the plugin's id.
+
+## MCP tools
+
+j-time serves an MCP endpoint on localhost, and every plugin's `tools` appear on
+it. That is how Claude Code — or any MCP client — reads your section and acts on
+it without a keystroke. The endpoint, and a switch for each tool, are on the
+**MCP server** page — type "mcp" in the palette. Yours arrive switched on.
+
+```js
+tools: [
+  {
+    name: 'search',                    // lowercase and underscores; served as bookmarks_search
+    description: 'Search the saved bookmarks by name or host.',
+    input: { q: { type: 'string', description: 'Part of a name or hostname.' } },
+    required: ['q'],
+    readOnly: true,                    // reads only; a client may skip asking permission
+    // destructive: true,              // writes something worth being asked about
+    run: ({ q }, host, config) => `…text the caller reads…`,
+  },
+]
+```
+
+| Field | |
+|---|---|
+| `name` | Lowercase letters, digits and underscores. The app prefixes it with your plugin id, so `search` in `bookmarks/` is called `bookmarks_search`. |
+| `description` | The only thing the caller has to go on. Say what it returns and when to use it, not just what it is called. |
+| `input` | JSON Schema per argument — `{ type, description }` is usually enough. The app builds the object schema around them. |
+| `required` | Which of those must be present. Names not in `input` are dropped. |
+| `readOnly` / `destructive` | Hints a client may surface when asking the user for approval. |
+| `run(args, host, config)` | Same `host` and `config` as a command. Return a string (the text the caller reads), `{ ok: false, error }`, or any other value — which is sent as JSON. May be async. |
+
+A tool is not a command with a different name: the caller cannot see the palette,
+so its arguments are **named** rather than positional, and its answer is prose
+rather than a toast. Write the text for somebody who has never seen your section
+— name the thing, its state, and the units.
+
+**The user can switch any of your tools off** on the **MCP server** page (type
+"mcp" in the palette), and a tool switched off is not offered to a client at
+all. So don't write one tool that only works if another was called first; each
+should stand on its own.
+
+Anything malformed is dropped, one tool at a time: a bad name costs that tool and
+nothing else. A tool with no `run` is not served at all. The names actually being
+served show up on your plugin's own settings screen.
 
 ## Rules worth knowing
 

@@ -4,6 +4,7 @@ import {
   buildSessionItems,
   completionKey,
   defaultClaudeConfig,
+  describeSessions,
   dismissCompletion,
   hiddenSessions,
   hideSession,
@@ -335,6 +336,31 @@ describe('attentionCount', () => {
       session('d', { changedAt: NOW - MINUTE }),
     ];
     expect(attentionCount(sessions, NOW, CONFIG)).toBe(1);
+  });
+});
+
+describe('describeSessions', () => {
+  it('groups by state and says what a waiting session is blocked on, and for how long', () => {
+    const sessions = [
+      session('a', {
+        title: 'Port the palette',
+        busy: true,
+        open: { tool: 'AskUserQuestion', detail: 'Which board?', at: NOW - 14 * MINUTE },
+      }),
+      session('b', { busy: true, open: call('Bash', 2) }),
+      session('c'),
+    ];
+    const lines = describeSessions(sessions, NOW, CONFIG, '/Users/x').split('\n');
+    expect(lines[0]).toBe('Waiting on you:');
+    expect(lines[1]).toContain('a — Port the palette · ~/dev/thing · AskUserQuestion (Which board?) for 14m');
+    expect(lines[2]).toBe('Working:');
+    expect(lines[4]).toBe('Idle:');
+  });
+
+  it('leaves out hidden sessions, and says so plainly when there are none at all', () => {
+    expect(describeSessions([], NOW, CONFIG)).toBe('No Claude Code sessions are open.');
+    const hidden = { ...CONFIG, hidden: ['a'] };
+    expect(describeSessions([session('a')], NOW, hidden)).toBe('No Claude Code sessions are open.');
   });
 });
 

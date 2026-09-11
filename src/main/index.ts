@@ -13,6 +13,7 @@ import { PLUGINS } from './plugins';
 import { installPluginsDir } from './plugins/install';
 import { mountRuntimePlugins } from './runtime';
 import { registerIpc } from './ipc';
+import { startMcp, stopMcp } from './mcp';
 import { beginQuit, createPanel, getPanel, showPanel, togglePanel } from './panel';
 import { createTray, destroyTray } from './tray';
 import { installMenu } from './menu';
@@ -56,6 +57,14 @@ if (process.env.JT_HOME) {
   app.setPath('userData', path.join(path.resolve(process.env.JT_HOME), 'chromium'));
 }
 
+/**
+ * What the endpoint is currently on, so a save that didn't touch it is free.
+ *
+ * Only the two things that need a socket. Switching a tool off changes what
+ * `tools/list` answers, not what is listening.
+ */
+let served = { enabled: false, port: 0 };
+
 // A second copy would be a second writer on state.json and a second menu bar
 // item. The first instance takes the hotkey press instead.
 if (!app.requestSingleInstanceLock()) {
@@ -79,7 +88,19 @@ if (!app.requestSingleInstanceLock()) {
 
     await shell.load();
     bindHotkey(shell.shellConfig().hotkey);
-    shell.events.on('shell-config', (config) => bindHotkey(config.hotkey));
+    served = { enabled: shell.mcpConfig().enabled, port: shell.mcpConfig().port };
+    void startMcp(shell.mcpConfig());
+    shell.events.on('shell-config', (config) => {
+      bindHotkey(config.hotkey);
+      // Only when the endpoint itself changed: every settings save comes through
+      // here, and restarting the server each time would drop a client's
+      // connection to save a hotkey.
+      const mcp = shell.mcpConfig();
+      if (mcp.enabled !== served.enabled || mcp.port !== served.port) {
+        served = { enabled: mcp.enabled, port: mcp.port };
+        void startMcp(mcp);
+      }
+    });
 
     void shell.refreshAll();
     shell.startPolling();
@@ -98,6 +119,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('before-quit', beginQuit);
 
   app.on('will-quit', () => {
+    void stopMcp();
     globalShortcut.unregisterAll();
     shell.stopPolling();
     destroyTray();
@@ -134,6 +156,23 @@ async function capture(file: string): Promise<void> {
       panel.webContents.sendInputEvent({ type: 'mouseMove', x, y, modifiers: [] } as never);
       panel.webContents.sendInputEvent({ type: 'mouseDown', ...at } as never);
       panel.webContents.sendInputEvent({ type: 'mouseUp', ...at } as never);
+      await new Promise((r) => setTimeout(r, 500));
+      continue;
+    }
+    // "scroll:x:y:ticks" for a page taller than the panel — a settings screen
+    // with a plugin's worth of rows on it can't be reviewed any other way, and
+    // the arrows belong to the search field rather than to the scroller.
+    if (chord.startsWith('scroll:')) {
+      const [x, y, ticks] = chord.slice(7).split(':').map(Number);
+      panel.webContents.sendInputEvent({
+        type: 'mouseWheel',
+        x,
+        y,
+        deltaX: 0,
+        deltaY: -(ticks || 3) * 40,
+        canScroll: true,
+        modifiers: [],
+      } as never);
       await new Promise((r) => setTimeout(r, 500));
       continue;
     }

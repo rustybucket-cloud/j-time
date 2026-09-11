@@ -74,6 +74,8 @@ export interface RuntimeSnapshot {
   secretsSet: Record<string, boolean>;
   configured: boolean;
   content: RuntimeContent;
+  /** The MCP tools it declared, already namespaced, so Settings can list them. */
+  tools: string[];
   /** Why the file could not be loaded, when it couldn't. */
   loadError: string | null;
 }

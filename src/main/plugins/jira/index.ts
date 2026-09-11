@@ -28,6 +28,7 @@ import { fileTime as fileTimeCore, finishStory } from '@shared/worklog';
 import { readState, writeState } from '../../store';
 import { str, optionalStr, type MainPlugin, type MenuBarState, type PluginHost } from '../../plugin';
 import { createJira, type JiraClient } from './client';
+import { jiraTools } from './tools';
 
 /** How often the board is re-read while the app is running. */
 const POLL_MS = 60_000;
@@ -192,6 +193,30 @@ function running(): { key: string; summary: string } | null {
   return { key, summary: story.summary };
 }
 
+/**
+ * The MCP tools, built once.
+ *
+ * Every one of them goes through the same functions the palette's rows do —
+ * `serial()` included, so a tool call and a keystroke can't interleave on the
+ * state file. The deps are getters rather than values because this is built
+ * before the first fetch and before the config is read.
+ */
+const TOOLS = jiraTools({
+  now: () => Date.now(),
+  state: () => state,
+  config: () => config,
+  // Done issues included: a story finished this sprint is exactly the one
+  // somebody asks about after the fact.
+  issues: () => [...issues, ...doneIssues],
+  transitions: (key) => jira.getTransitions(key),
+  start,
+  stop,
+  fileTime,
+  finish,
+  transition,
+  relabel,
+});
+
 export const plugin: MainPlugin<JiraSnapshot, JiraConfig> = {
   id: 'jira',
   title: 'JIRA',
@@ -267,6 +292,8 @@ export const plugin: MainPlugin<JiraSnapshot, JiraConfig> = {
       return { ok: true, data: await jira.getTransitions(str(args, 0)) };
     },
   },
+
+  mcp: () => TOOLS,
 
   /**
    * The title is the whole point of the menu bar item. A timer you have to open

@@ -84,4 +84,28 @@ module.exports = {
       return 'Copied';
     },
   },
+
+  // What this plugin puts on j-time's MCP endpoint, for Claude Code and any
+  // other MCP client to call. Named `bookmarks_*` there, so two plugins can both
+  // have a `search`. Arguments are named — the caller can't see the screen —
+  // and the answer is text, because text is all it gets.
+  tools: [
+    {
+      name: 'search',
+      description: 'Search the saved bookmarks by name or host. Returns matching names and URLs.',
+      // JSON Schema for each argument. The app wraps these in the object schema.
+      input: { q: { type: 'string', description: 'Part of a name or hostname.' } },
+      required: ['q'],
+      // readOnly lets a client skip asking permission; destructive makes it ask.
+      readOnly: true,
+      run: ({ q }, host, config) => {
+        const needle = String(q || '').toLowerCase();
+        const hits = parse(config.links).filter((link) =>
+          `${link.name} ${link.url}`.toLowerCase().includes(needle),
+        );
+        if (hits.length === 0) return `No bookmark matches "${q}".`;
+        return hits.map((link) => `${link.name} — ${link.url}`).join('\n');
+      },
+    },
+  ],
 };
