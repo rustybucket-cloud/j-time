@@ -8,12 +8,15 @@ import type { LayoutState } from '@shared/layout';
 import type { ShellConfig } from '@shared/shell';
 import * as shell from './shell';
 import { hidePanel, setDismissOnBlur, setPanelHeight } from './panel';
+import { reloadRuntimePlugins } from './runtime';
 
 export function registerIpc(): void {
   ipcMain.handle('snapshot', () => shell.snapshot());
   ipcMain.handle('refresh', (_e, plugin?: string) =>
     plugin ? shell.refreshPlugin(plugin) : shell.refreshAll(),
   );
+
+  ipcMain.handle('reloadPlugins', () => reloadRuntimePlugins());
 
   ipcMain.handle('invoke', (_e, plugin: string, command: string, args: unknown[] = []) =>
     shell.invoke(plugin, command, args),

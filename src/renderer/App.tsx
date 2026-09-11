@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Overlay, PluginScreen, Row, Ctx } from '@shared/plugin';
-import type { Snapshot, PluginId } from '@shared/ipc';
+import type { Snapshot } from '@shared/ipc';
 import { moveSection, resolveLayout, toggleCollapsed } from '@shared/layout';
 import {
   buildOverlay,
@@ -13,7 +13,7 @@ import {
   type SectionInput,
 } from '@shared/sections';
 import { prettyAccelerator } from '@shared/keys';
-import { VIEWS } from './plugins';
+import { viewFor } from './plugins';
 import { appCommands, COMMANDS_SECTION } from './commands';
 import { List } from './components/List';
 import { ShellSettings } from './components/ShellSettings';
@@ -190,13 +190,14 @@ export function App(): ReactNode {
     const out: SectionInput[] = [];
 
     for (const { id, collapsed, pins } of resolveLayout(layout, pluginIds)) {
-      const view = VIEWS[id as PluginId];
       const meta = snapshot.shell.plugins.find((p) => p.id === id);
-      if (!view || !meta) continue;
-      const content = view.section(snapshot.plugins[id as PluginId] as never, ctx);
+      if (!meta) continue;
+      const view = viewFor(id);
+      const content = view.section(snapshot.plugins[id] as never, ctx);
       out.push({
         id,
-        title: view.title,
+        // A runtime plugin's title is whatever its file says, and only main knows.
+        title: meta.title || view.title,
         rows: content.rows,
         collapsed,
         pins,
@@ -209,8 +210,7 @@ export function App(): ReactNode {
 
     const commands: Row[] = [
       ...out.flatMap((section) => {
-        const view = VIEWS[section.id as PluginId];
-        return view?.commands?.(snapshot.plugins[section.id as PluginId] as never, ctx) ?? [];
+        return viewFor(section.id).commands?.(snapshot.plugins[section.id] as never, ctx) ?? [];
       }),
       ...appCommands(ctx),
     ];
@@ -268,8 +268,7 @@ export function App(): ReactNode {
   /** ⌘K on a section header opens that section's own commands. */
   const sectionActions = (sectionId: string): Row[] => {
     if (!snapshot || !ctx) return [];
-    const view = VIEWS[sectionId as PluginId];
-    return view?.section(snapshot.plugins[sectionId as PluginId] as never, ctx).actions ?? [];
+    return viewFor(sectionId).section(snapshot.plugins[sectionId] as never, ctx).actions ?? [];
   };
 
   const menuRows = useMemo(() => (ctx ? appCommands(ctx) : []), [ctx]);
@@ -404,9 +403,9 @@ export function App(): ReactNode {
     );
   }
 
-  const settingsView = screen.kind === 'settings' ? VIEWS[screen.plugin as PluginId] : undefined;
-  const pluginScreen =
-    screen.kind === 'plugin' ? VIEWS[screen.screen.plugin as PluginId] : undefined;
+  // `plugin: ''` is the shell's own page, which no view owns.
+  const settingsView = screen.kind === 'settings' && screen.plugin ? viewFor(screen.plugin) : undefined;
+  const pluginScreen = screen.kind === 'plugin' ? viewFor(screen.screen.plugin) : undefined;
 
   const placeholder = overlay
     ? overlay.placeholder
@@ -455,7 +454,7 @@ export function App(): ReactNode {
 
       {screen.kind === 'settings' ? (
         settingsView?.settings ? (
-          settingsView.settings(snapshot.plugins[screen.plugin as PluginId] as never, (text) =>
+          settingsView.settings(snapshot.plugins[screen.plugin] as never, (text) =>
             setToast({ text }),
           )
         ) : (
@@ -467,7 +466,7 @@ export function App(): ReactNode {
         )
       ) : screen.kind === 'plugin' ? (
         (pluginScreen?.screen?.(
-          snapshot.plugins[screen.screen.plugin as PluginId] as never,
+          snapshot.plugins[screen.screen.plugin] as never,
           ctx,
           screen.screen.view,
           screen.screen.arg,

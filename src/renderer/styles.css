@@ -600,7 +600,8 @@ kbd {
 
 .field input[type='text'],
 .field input[type='password'],
-.field input[type='number'] {
+.field input[type='number'],
+.field textarea {
   width: 100%;
   padding: 8px 10px;
   border-radius: 7px;
@@ -612,8 +613,21 @@ kbd {
   user-select: text;
 }
 
-.field input:focus {
+.field input:focus,
+.field textarea:focus {
   border-color: var(--accent);
+}
+
+.field textarea {
+  resize: vertical;
+  line-height: 1.4;
+}
+
+/* A label with a pill after it, the way a section header carries one. */
+.field label .pill {
+  margin-left: 6px;
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 .field .note {

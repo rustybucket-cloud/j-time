@@ -24,6 +24,7 @@ const bridge: Bridge = {
   invoke: (plugin, command, args = []) => ipcRenderer.invoke('invoke', plugin, command, args),
   query: (plugin, name, args = []) => ipcRenderer.invoke('query', plugin, name, args),
   refresh: (plugin) => ipcRenderer.invoke('refresh', plugin),
+  reloadPlugins: () => ipcRenderer.invoke('reloadPlugins'),
   savePluginConfig: (plugin, patch) => ipcRenderer.invoke('savePluginConfig', plugin, patch),
 
   saveShellConfig: (patch: Partial<ShellConfig>) => ipcRenderer.invoke('saveShellConfig', patch),

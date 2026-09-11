@@ -134,7 +134,8 @@ export function ShellSettings({
           </button>
         </div>
         <div className="note">
-          Each plugin’s source is installed there, next to a guide to writing your own.
+          A folder with a main.js in it is a plugin. There’s an example and a guide there;
+          “Reload plugins” in the palette picks up changes.
         </div>
       </div>
 

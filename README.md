@@ -78,14 +78,19 @@ same screen, reached with `⌘,`.
 
 ## Plugins
 
-Each section of the palette is a plugin. They live in `~/.j-time/plugins`, one
-directory per plugin: the first launch installs the source of the two that ship
-there, next to an `AGENTS.md` (and a `CLAUDE.md`, same text) explaining how to
-write another. **Copy path** on the Settings screen puts the folder's location on
-the clipboard.
+Each section of the palette is a plugin, and you can write your own. They live
+in `~/.j-time/plugins`, one folder per plugin with a `main.js` inside — a plain
+CommonJS module that returns rows as data and names the commands they can run.
+The first launch puts an example (`bookmarks/`) there, next to an `AGENTS.md`
+(and a `CLAUDE.md`, same text) that spells out the contract. **Copy path** on
+the Settings screen puts the folder's location on the clipboard, and **Reload
+plugins** in the palette picks up new folders and edits without a restart.
 
-Plugins are compiled into the app rather than loaded from that folder, so a new
-one is built in — the guide walks through the four edits.
+A plugin's file runs in the app's main process with Node and Electron available;
+what it hands back is checked and drawn by the app, so a plugin never draws
+anything and every section gets the same keys, search and pinning. JIRA and
+Claude Code are compiled in rather than loaded from the folder — they have
+screens and pickers the data-only contract doesn't cover.
 
 ## Use it
 

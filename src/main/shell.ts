@@ -52,6 +52,18 @@ export function register(plugin: MainPlugin): void {
   plugin.init({ changed: emit, refresh: () => void refreshPlugin(plugin.id) });
 }
 
+export function has(id: string): boolean {
+  return registry.has(id);
+}
+
+/** Forget a plugin. Its config section stays in the file, as an uninstalled one's would. */
+export function unregister(id: string): void {
+  const entry = registry.get(id);
+  if (!entry) return;
+  if (entry.timer) clearInterval(entry.timer);
+  registry.delete(id);
+}
+
 export function plugins(): MainPlugin[] {
   return [...registry.values()].map((r) => r.plugin);
 }

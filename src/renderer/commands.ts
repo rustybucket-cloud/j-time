@@ -29,6 +29,13 @@ export function appCommands(ctx: Ctx): Row[] {
       run: () => ctx.actStay(() => window.jt.refresh()),
     },
     {
+      id: 'app:reload-plugins',
+      title: 'Reload plugins',
+      subtitle: 'Re-reads ~/.j-time/plugins — new folders, and edits to a main.js',
+      keywords: ['plugin', 'load', 'develop'],
+      run: () => ctx.actStay(() => window.jt.reloadPlugins()),
+    },
+    {
       id: 'app:quit',
       title: 'Quit j-time',
       subtitle: 'Stops the menu bar clock. Tracked time is already saved.',

@@ -1,86 +1,32 @@
 /**
- * The plugins directory: `~/.j-time/plugins`, one directory per plugin.
+ * Seed `~/.j-time/plugins` with what ships in the repository's `plugins/`.
  *
- * Plugins are compiled into the app — a row carries closures, and a closure
- * can't cross the bridge — so nothing here is *loaded*. What the directory is
- * for is the next plugin: the two that ship are installed as their source, in
- * the layout the app's own tree uses, next to a guide for writing a third. A
+ * The directory is read by `runtime.ts`; this only makes sure a first launch has
+ * something in it to read — a guide, and one working plugin to copy from. A
  * worked example you can open beats a contract you have to read.
  *
- * A plugin's directory is written only when it is missing, so a copy someone
- * has been editing survives an upgrade, and deleting one gets a fresh copy on
- * the next launch. The guide is the app's rather than the user's, and is kept
- * current instead.
+ * Two rules, by depth. A plugin directory is written only when it is missing,
+ * so a copy someone has been editing survives an upgrade, and deleting one gets
+ * a fresh copy on the next launch. The top-level files are the app's rather than
+ * the user's, and are kept current instead.
  */
 
 import { promises as fs } from 'fs';
 import path from 'path';
-import { app } from 'electron';
-import type { MainPlugin } from '../plugin';
 import { ensureDir, PLUGINS_DIR } from '../store';
-import GUIDE from '../../../docs/plugins/AGENTS.md?raw';
 
 /**
- * The source, embedded at build time.
- *
- * A packaged .app carries only `out/`, so the files have to travel inside the
- * bundle to be there to write out. `?raw` keeps them as text: the same files are
- * also imported as code by the registry, and the two never meet. The options are
- * spelled out three times because Vite reads them off the call site and accepts
- * only an object literal there.
+ * Embedded at build time: a packaged .app carries only `out/`, so the files
+ * travel inside the bundle to be there to write out. Vite reads the options off
+ * the call site and accepts only an object literal there.
  */
-const MAIN = import.meta.glob('./*/**/*.ts', {
-  query: '?raw',
-  import: 'default',
-  eager: true,
-}) as Record<string, string>;
-const RENDERER = import.meta.glob('../../renderer/plugins/*/**/*.{ts,tsx}', {
-  query: '?raw',
-  import: 'default',
-  eager: true,
-}) as Record<string, string>;
-const SHARED = import.meta.glob('../../shared/*.ts', {
+const SHIPPED = import.meta.glob('../../../plugins/**/*', {
   query: '?raw',
   import: 'default',
   eager: true,
 }) as Record<string, string>;
 
-/**
- * Which of `src/shared/` is a plugin's own.
- *
- * The rest — time formatting, the palette, the layout — is the shell's, and a
- * plugin imports it rather than owning it. Tests travel with their module, since
- * "ordering belongs in shared, with tests" is the example worth copying.
- */
-const OWNED_SHARED: Record<string, string[]> = {
-  jira: ['jira', 'conn', 'types', 'timer-logic', 'worklog', 'activities', 'board', 'stages'],
-  claude: ['claude'],
-};
-
-/** Every file of one plugin, keyed by where it goes under the plugin's directory. */
-function filesFor(plugin: MainPlugin): Record<string, string> {
-  const out: Record<string, string> = {};
-  const take = (bundle: Record<string, string>, prefix: string, into: string) => {
-    for (const [key, text] of Object.entries(bundle)) {
-      const [id, ...rest] = key.slice(prefix.length).split('/');
-      if (id === plugin.id && rest.length) out[[into, ...rest].join('/')] = text;
-    }
-  };
-  take(MAIN, './', 'main');
-  take(RENDERER, '../../renderer/plugins/', 'renderer');
-  for (const name of OWNED_SHARED[plugin.id] ?? []) {
-    for (const file of [`${name}.ts`, `${name}.test.ts`]) {
-      const text = SHARED[`../../shared/${file}`];
-      if (text !== undefined) out[`shared/${file}`] = text;
-    }
-  }
-  out['plugin.json'] = `${JSON.stringify(
-    { id: plugin.id, title: plugin.title, appVersion: app.getVersion() },
-    null,
-    2,
-  )}\n`;
-  return out;
-}
+const PREFIX = '../../../plugins/';
 
 const exists = (file: string): Promise<boolean> =>
   fs.access(file).then(
@@ -89,19 +35,19 @@ const exists = (file: string): Promise<boolean> =>
   );
 
 /**
- * Write the plugin next to where it goes, then rename it into place.
+ * Write a plugin next to where it goes, then rename it into place.
  *
  * A directory that exists is a directory that is installed, so a launch that
  * dies halfway through must not leave one behind: the temp directory is what a
  * crash leaves, and the next launch starts over.
  */
-async function installPlugin(plugin: MainPlugin): Promise<void> {
-  const dir = path.join(PLUGINS_DIR, plugin.id);
+async function installPlugin(id: string, files: Record<string, string>): Promise<void> {
+  const dir = path.join(PLUGINS_DIR, id);
   if (await exists(dir)) return;
 
   const tmp = `${dir}.${process.pid}.tmp`;
   await fs.rm(tmp, { recursive: true, force: true });
-  for (const [rel, text] of Object.entries(filesFor(plugin))) {
+  for (const [rel, text] of Object.entries(files)) {
     const file = path.join(tmp, rel);
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, text, 'utf8');
@@ -122,23 +68,34 @@ async function writeIfChanged(file: string, text: string): Promise<void> {
 }
 
 /**
- * Put every shipped plugin, and the guide, in the plugins directory.
+ * Put the guide and the example plugin in the plugins directory.
  *
- * Never fatal: the app is a clock and a palette, and neither depends on a copy
- * of its own source being on disk.
+ * Never fatal: the app is a clock and a palette, and neither depends on an
+ * example being on disk.
  */
-export async function installShippedPlugins(plugins: MainPlugin[]): Promise<void> {
+export async function installPluginsDir(): Promise<void> {
   try {
     // Through the store, so a first launch that reaches here before anything
     // has been saved still gets the owner-only ~/.j-time it would have had.
     await ensureDir();
     await fs.mkdir(PLUGINS_DIR, { recursive: true, mode: 0o700 });
-    for (const plugin of plugins) await installPlugin(plugin);
-    // Both names, same text: AGENTS.md is the convention most tools read, and
-    // CLAUDE.md is the one Claude Code reads.
-    await writeIfChanged(path.join(PLUGINS_DIR, 'AGENTS.md'), GUIDE);
-    await writeIfChanged(path.join(PLUGINS_DIR, 'CLAUDE.md'), GUIDE);
+
+    const byPlugin = new Map<string, Record<string, string>>();
+    for (const [key, text] of Object.entries(SHIPPED)) {
+      const [head, ...rest] = key.slice(PREFIX.length).split('/');
+      if (rest.length === 0) {
+        await writeIfChanged(path.join(PLUGINS_DIR, head), text);
+        // Both names, same text: AGENTS.md is the convention most tools read,
+        // and CLAUDE.md is the one Claude Code reads.
+        if (head === 'AGENTS.md') await writeIfChanged(path.join(PLUGINS_DIR, 'CLAUDE.md'), text);
+        continue;
+      }
+      const files = byPlugin.get(head) ?? {};
+      files[rest.join('/')] = text;
+      byPlugin.set(head, files);
+    }
+    for (const [id, files] of byPlugin) await installPlugin(id, files);
   } catch (e: unknown) {
-    console.error('Could not install the plugins directory:', e);
+    console.error('Could not seed the plugins directory:', e);
   }
 }
