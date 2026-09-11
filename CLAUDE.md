@@ -22,7 +22,7 @@ three registration lines, and nothing in the shell learned what a session is.
 
 ```bash
 npm run dev        # electron-vite with renderer HMR
-npm test           # vitest, pure logic only (337 tests)
+npm test           # vitest, pure logic only (348 tests)
 npm run typecheck  # both projects — main/preload, then renderer
 npm run build      # typecheck + bundle into out/
 sh scripts/sandbox.sh   # the app against a mock JIRA, with scratch state
@@ -182,6 +182,32 @@ the user would be worse than a stale entry nobody sees. A switched-off tool is
 absent from `tools/list` **and** refused by name, saying it was switched off —
 a client holding a list from before the change would otherwise get "no such
 tool", which reads as a bug rather than a setting.
+
+**The page registers us with a client, rather than telling you to.** A loopback
+server nobody has been told about answers nothing, and the step between
+"listening" and "usable" was a JSON file in another app's home directory.
+`shared/harness.ts` is the fold — pure and tested — and `main/harness.ts` is the
+only place in j-time that writes a file belonging to another application: read,
+change one key, rename the whole thing back, preserving the mode it had. The
+copy-the-command row stays, for every client that isn't Claude Code yet.
+
+**A registration is recognised by destination, not by name.** The entry we would
+write is `j-time`, but the endpoint has one URL and an entry the user added
+themselves — `jira-timer`, from before the app was renamed — is the same
+registration; matching on the name would leave the button offering to install
+something already there, twice. Both `MCP_PATHS` count, and so does either
+spelling of loopback. Uninstall removes every entry pointing at us and leaves one
+on another port alone: that one isn't this endpoint.
+
+**There is no lock between us and the client**, which writes `~/.claude.json` on
+its own schedule. The read and the write are as close together as they can be and
+every key we don't know about is carried through — a button pressed once is the
+right size of risk for a read-modify-write, and the alternative is the user
+editing the same file by hand with no lock either.
+
+**`CLAUDE_CONFIG_DIR` puts the config file inside that directory**, where by
+default it sits *beside* `~/.claude` rather than in it. Honouring it is what let
+this be tested against a fixture instead of against the real registration.
 
 **The endpoint has its own settings page, `components/McpSettings.tsx`.** The
 shell's own page keeps a one-line summary and a way in; the tool list is as long
@@ -545,7 +571,7 @@ reach for it.
 
 `npm test` covers pure logic only: `time`, `timer-logic`, `activities`, `stages`,
 `conn`, `worklog`, `palette`, `board`, `sections`, `layout`, `keys`, `claude`,
-`runtime`, `mcp`, `report`. There
+`runtime`, `mcp`, `harness`, `report`. There
 are no component or IPC tests — if you add a feature with real logic in it, put
 that logic in `src/shared/` and test it there rather than reaching for a
 rendering harness.

@@ -9,6 +9,7 @@ import type { ShellConfig } from '@shared/shell';
 import * as shell from './shell';
 import { hidePanel, setDismissOnBlur, setPanelHeight } from './panel';
 import { reloadRuntimePlugins } from './runtime';
+import { setHarness } from './harness';
 
 export function registerIpc(): void {
   ipcMain.handle('snapshot', () => shell.snapshot());
@@ -31,6 +32,7 @@ export function registerIpc(): void {
   ipcMain.handle('saveShellConfig', (_e, patch: Partial<ShellConfig>) =>
     shell.saveShellConfig(patch),
   );
+  ipcMain.handle('setHarness', (_e, id: string, install: boolean) => setHarness(id, install));
   ipcMain.handle('saveLayout', (_e, layout: LayoutState) => shell.saveLayout(layout));
 
   ipcMain.handle('openUrl', (_e, url: string) => {

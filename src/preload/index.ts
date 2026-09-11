@@ -29,6 +29,7 @@ const bridge: Bridge = {
 
   saveShellConfig: (patch: Partial<ShellConfig>) => ipcRenderer.invoke('saveShellConfig', patch),
   saveLayout: (layout: LayoutState) => ipcRenderer.invoke('saveLayout', layout),
+  setHarness: (id, install) => ipcRenderer.invoke('setHarness', id, install),
 
   openUrl: (url: string) => ipcRenderer.invoke('openUrl', url),
   copy: (text) => ipcRenderer.invoke('copy', text),

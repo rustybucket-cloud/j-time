@@ -14,6 +14,7 @@ import { installPluginsDir } from './plugins/install';
 import { mountRuntimePlugins } from './runtime';
 import { registerIpc } from './ipc';
 import { startMcp, stopMcp } from './mcp';
+import { refreshHarnesses } from './harness';
 import { beginQuit, createPanel, getPanel, showPanel, togglePanel } from './panel';
 import { createTray, destroyTray } from './tray';
 import { installMenu } from './menu';
@@ -90,6 +91,7 @@ if (!app.requestSingleInstanceLock()) {
     bindHotkey(shell.shellConfig().hotkey);
     served = { enabled: shell.mcpConfig().enabled, port: shell.mcpConfig().port };
     void startMcp(shell.mcpConfig());
+    void refreshHarnesses();
     shell.events.on('shell-config', (config) => {
       bindHotkey(config.hotkey);
       // Only when the endpoint itself changed: every settings save comes through
@@ -99,6 +101,9 @@ if (!app.requestSingleInstanceLock()) {
       if (mcp.enabled !== served.enabled || mcp.port !== served.port) {
         served = { enabled: mcp.enabled, port: mcp.port };
         void startMcp(mcp);
+        // A moved port makes a registration at the old one stale, and the page
+        // has to stop claiming a client is set up when it is pointed elsewhere.
+        void refreshHarnesses();
       }
     });
 

@@ -28,10 +28,12 @@ export function McpSettings({
   snapshot: Snapshot;
   onSaved: (message: string) => void;
 }): ReactNode {
-  const { config, mcp } = snapshot.shell;
+  const { config, mcp, harnesses } = snapshot.shell;
   const stored = config.mcp;
   const [port, setPort] = useState(String(stored.port));
   const [saving, setSaving] = useState(false);
+  /** Which client is mid-write, so its own button says so and no other one does. */
+  const [busy, setBusy] = useState<string | null>(null);
 
   const addCommand = `claude mcp add --transport http j-time ${mcp.url}`;
   const off = mcp.tools.filter((t) => !t.enabled).length;
@@ -64,6 +66,20 @@ export function McpSettings({
   function savePort(): void {
     const typed = Number.parseInt(port, 10);
     void write({ port: Number.isFinite(typed) ? typed : DEFAULT_MCP_PORT });
+  }
+
+  /**
+   * Put us in a client's config, or take us out.
+   *
+   * The same edit the copied command makes, minus the terminal — which is the
+   * point: the endpoint is useless until something has been told about it, and
+   * "paste this into a shell" is a strange last step for a menu-bar app.
+   */
+  async function toggleHarness(id: string, install: boolean): Promise<void> {
+    setBusy(id);
+    const result = await window.jt.setHarness(id, install);
+    setBusy(null);
+    onSaved(result.ok ? (result.message ?? 'Saved') : result.error);
   }
 
   async function copyAddCommand(): Promise<void> {
@@ -110,6 +126,45 @@ export function McpSettings({
           />
           Serve on localhost
         </label>
+      </div>
+
+      <div className="field">
+        <label>Clients</label>
+        <div className="note">
+          Installing writes the endpoint into the client’s own config, under the name
+          j-time. It reads the file first, so a registration you added yourself is
+          recognised rather than duplicated — and uninstalling removes it again.
+        </div>
+
+        {harnesses.map((harness) => {
+          const installed = harness.name !== null;
+          return (
+            <div className="tool-group" key={harness.id}>
+              <div className="tool-group-head">
+                <span className="name">
+                  {harness.title}
+                  {installed && <span className="pill accent">installed</span>}
+                </span>
+                <button
+                  type="button"
+                  disabled={busy !== null}
+                  onClick={() => void toggleHarness(harness.id, !installed)}
+                >
+                  {busy === harness.id ? 'Working…' : installed ? 'Uninstall' : 'Install'}
+                </button>
+              </div>
+              <div className="note">
+                {harness.error
+                  ? `Couldn’t read ${harness.path}: ${harness.error}`
+                  : installed
+                    ? `Registered as “${harness.name}” in ${harness.path}. Restart the client to pick up a change.`
+                    : harness.what}
+              </div>
+            </div>
+          );
+        })}
+
+        <div className="note">For anything else, the registration command:</div>
         <div className="copy-row">
           <span className="path" title={addCommand}>
             {addCommand}

@@ -17,6 +17,7 @@ import type { ActionResult, QueryResult } from '@shared/plugin';
 import type { PluginSnapshots, Snapshot } from '@shared/ipc';
 import { freezeOrder, type LayoutState } from '@shared/layout';
 import type { PluginMeta, ShellConfig } from '@shared/shell';
+import type { HarnessStatus } from '@shared/harness';
 import {
   defaultMcpConfig,
   mcpUrl,
@@ -57,6 +58,8 @@ let mcp: McpStatus = {
   error: null,
   tools: [],
 };
+/** Which clients we are registered with. Read from their configs, never guessed. */
+let harnesses: HarnessStatus[] = [];
 
 export function register(plugin: MainPlugin): void {
   registry.set(plugin.id, {
@@ -124,6 +127,7 @@ export function snapshot(): Snapshot {
       // off — and every tool, not only the ones switched on, since otherwise
       // there is nowhere to switch one back on from.
       mcp: { ...mcp, tools: mcpToolInfo() },
+      harnesses,
     },
     plugins: slices as unknown as PluginSnapshots,
   };
@@ -330,6 +334,19 @@ export function setHotkeyRegistered(ok: boolean): void {
  */
 export function setMcpStatus(next: McpStatus): void {
   mcp = next;
+  emit();
+}
+
+/**
+ * The clients' configs, as last read.
+ *
+ * Held rather than read on each snapshot: a snapshot is assembled on every
+ * change and several times a second while a timer runs, and another app's
+ * config file is not something to stat that often to answer a question that
+ * only changes when somebody presses the button.
+ */
+export function setHarnesses(next: HarnessStatus[]): void {
+  harnesses = next;
   emit();
 }
 

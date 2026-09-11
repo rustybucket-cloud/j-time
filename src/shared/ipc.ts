@@ -59,6 +59,8 @@ export interface Bridge {
   savePluginConfig(plugin: string, patch: Record<string, unknown>): Promise<ActionResult>;
 
   saveShellConfig(patch: Partial<ShellConfig>): Promise<ActionResult>;
+  /** Add or remove this app's MCP endpoint in another client's own config. */
+  setHarness(id: string, install: boolean): Promise<ActionResult>;
   saveLayout(layout: LayoutState): Promise<ActionResult>;
 
   /** Any http(s) link a plugin built. */

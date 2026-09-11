@@ -8,6 +8,7 @@
 
 import type { LayoutState } from './layout';
 import { defaultMcpConfig, type McpConfig, type McpStatus } from './mcp';
+import type { HarnessStatus } from './harness';
 
 export const DEFAULT_HOTKEY = 'Command+Shift+J';
 
@@ -57,4 +58,6 @@ export interface ShellSnapshot {
   pluginsDir: string;
   /** Whether the MCP endpoint is up, and which tools are on it. */
   mcp: McpStatus;
+  /** The clients we could register with, and whether we already are. */
+  harnesses: HarnessStatus[];
 }
