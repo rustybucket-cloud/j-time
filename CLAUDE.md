@@ -64,6 +64,17 @@ The split, in one line each:
 deliberate friction — plugins are compiled in, so there is no reason to give up
 knowing their shapes.
 
+**`~/.j-time/plugins` is where plugins live, and it is a copy, not a loader.**
+`plugins/install.ts` writes each shipped plugin's source there on first launch —
+`main/`, `renderer/`, its own `shared/` files, and a `plugin.json` — next to an
+`AGENTS.md` and `CLAUDE.md` (same text, from `docs/plugins/AGENTS.md`) on how to
+write another. The source travels inside the main bundle as `?raw` imports,
+because a packaged .app carries only `out/`. A plugin's directory is written only
+when missing, so an edited copy survives an upgrade and deleting one gets a fresh
+copy; the guide is rewritten whenever it changes. The rows-carry-closures rule
+above is why nothing is loaded from there: a user's plugin is still compiled in.
+`JT_HOME` redirects this directory with the rest.
+
 **Two parts of the contract currently have no user**, both kept because they
 are the shell's, not any plugin's: `SecretField`'s `{ list, field }` form, for
 a plugin holding several credentials rather than one, and `mergeConfig`, for

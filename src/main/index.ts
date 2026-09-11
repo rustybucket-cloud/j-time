@@ -10,6 +10,7 @@ import { app, globalShortcut } from 'electron';
 import { DEFAULT_HOTKEY } from '@shared/shell';
 import * as shell from './shell';
 import { PLUGINS } from './plugins';
+import { installShippedPlugins } from './plugins/install';
 import { registerIpc } from './ipc';
 import { beginQuit, createPanel, getPanel, showPanel, togglePanel } from './panel';
 import { createTray, destroyTray } from './tray';
@@ -71,6 +72,9 @@ if (!app.requestSingleInstanceLock()) {
     createTray();
 
     await shell.load();
+    // Off the launch path: a copy of the plugins on disk is for whoever writes
+    // the next one, and the palette shouldn't wait on it.
+    void installShippedPlugins(PLUGINS);
     bindHotkey(shell.shellConfig().hotkey);
     shell.events.on('shell-config', (config) => bindHotkey(config.hotkey));
 

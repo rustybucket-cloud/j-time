@@ -47,4 +47,6 @@ export interface ShellSnapshot {
   plugins: PluginMeta[];
   /** False when another app already owns the hotkey, so Settings can say so. */
   hotkeyRegistered: boolean;
+  /** The directory plugins are installed in, so Settings can hand it to the user. */
+  pluginsDir: string;
 }

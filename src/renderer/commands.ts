@@ -16,7 +16,7 @@ export function appCommands(ctx: Ctx): Row[] {
     {
       id: 'app:settings',
       title: 'Settings…',
-      subtitle: 'Hotkey, section order, and each app’s connection',
+      subtitle: 'Hotkey, plugin order, and each app’s connection',
       keywords: ['config', 'preferences', 'plugins'],
       badges: [{ text: '⌘,', kind: 'key' }],
       run: () => ctx.openSettings(''),

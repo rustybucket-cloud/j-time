@@ -30,6 +30,13 @@ export const DIR = process.env.JT_HOME
   : path.join(os.homedir(), '.j-time');
 export const STATE_FILE = path.join(DIR, 'state.json');
 export const CONFIG_FILE = path.join(DIR, 'config.json');
+/**
+ * Where plugins live on disk: one directory per plugin, holding its source.
+ *
+ * The shipped plugins are installed here on first launch as worked examples,
+ * next to a guide for writing another — see `plugins/install.ts`.
+ */
+export const PLUGINS_DIR = path.join(DIR, 'plugins');
 
 /** Owner-only. Nothing in here is another account's business. */
 const DIR_MODE = 0o700;
@@ -46,7 +53,7 @@ let prepared: Promise<void> | null = null;
  * chmod is still a directory we can write to, and refusing to save someone's
  * tracked time over a permission bit would be the worse failure.
  */
-function ensureDir(): Promise<void> {
+export function ensureDir(): Promise<void> {
   prepared ??= (async () => {
     await fs.mkdir(DIR, { recursive: true, mode: DIR_MODE });
     await fs.chmod(DIR, DIR_MODE).catch(() => undefined);

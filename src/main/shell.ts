@@ -18,7 +18,7 @@ import type { PluginSnapshots, Snapshot } from '@shared/ipc';
 import { freezeOrder, type LayoutState } from '@shared/layout';
 import type { PluginMeta, ShellConfig } from '@shared/shell';
 import type { MainPlugin, MenuBarState } from './plugin';
-import { readConfig, writeConfig, type RootConfig, type SecretFields } from './store';
+import { PLUGINS_DIR, readConfig, writeConfig, type RootConfig, type SecretFields } from './store';
 
 /** Opening the palette re-reads only what's older than this. */
 const STALE_MS = 15_000;
@@ -84,6 +84,7 @@ export function snapshot(): Snapshot {
       layout: root.layout,
       plugins: [...registry.values()].map((r) => ({ ...r.meta })),
       hotkeyRegistered,
+      pluginsDir: PLUGINS_DIR,
     },
     plugins: slices as unknown as PluginSnapshots,
   };

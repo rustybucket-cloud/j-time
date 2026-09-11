@@ -73,8 +73,19 @@ The first launch opens straight to Settings. Each plugin is set up separately.
 Also there: the activity labels you file time under, and the rounding increment.
 The token is stored encrypted with Electron's safeStorage.
 
-The app's own settings — the hotkey, and the order of the sections — are on the
+The app's own settings — the hotkey, and the order of the plugins — are on the
 same screen, reached with `⌘,`.
+
+## Plugins
+
+Each section of the palette is a plugin. They live in `~/.j-time/plugins`, one
+directory per plugin: the first launch installs the source of the two that ship
+there, next to an `AGENTS.md` (and a `CLAUDE.md`, same text) explaining how to
+write another. **Copy path** on the Settings screen puts the folder's location on
+the clipboard.
+
+Plugins are compiled into the app rather than loaded from that folder, so a new
+one is built in — the guide walks through the four edits.
 
 ## Use it
 
