@@ -22,7 +22,7 @@ three registration lines, and nothing in the shell learned what a session is.
 
 ```bash
 npm run dev        # electron-vite with renderer HMR
-npm test           # vitest, pure logic only (275 tests)
+npm test           # vitest, pure logic only (291 tests)
 npm run typecheck  # both projects — main/preload, then renderer
 npm run build      # typecheck + bundle into out/
 sh scripts/sandbox.sh   # the app against a mock JIRA, with scratch state
@@ -64,6 +64,30 @@ The split, in one line each:
 deliberate friction — plugins are compiled in, so there is no reason to give up
 knowing their shapes.
 
+**Runtime plugins load from `~/.j-time/plugins`, and they are data, not code, as
+far as the renderer is concerned.** `<id>/main.js` is a CommonJS module that
+`main/runtime.ts` `require`s in the main process — the user's own code, on the
+user's own machine, with everything the app has. What it returns from `refresh`
+goes through `sanitiseContent` in `shared/runtime.ts` (pure, tested) and comes
+out as `RuntimeRow`s: the `Row` shape with `run` naming a command or a url
+instead of being a closure. `renderer/plugins/runtime.tsx` is the one view they
+all share, which puts the closures back as `invoke(id, command, args)` and
+draws a settings form from the `fields` the plugin declared. Secrets are the
+fields marked `secret`, so the store encrypts them like anyone else's. A file
+that fails to load is still registered, with the error on its header — a typo
+that made the section vanish would be indistinguishable from the folder being
+ignored. `reloadRuntimePlugins` unregisters and re-mounts, then goes back
+through `shell.load()` so a plugin added since launch has its secrets decrypted.
+`PluginSnapshots` has an index signature for them; the built-ins stay listed.
+
+**`plugins/` in the repo is what a fresh `~/.j-time/plugins` gets.**
+`plugins/install.ts` embeds it with `?raw` imports (a packaged .app carries only
+`out/`) and writes it out on launch: a plugin directory only when missing, so an
+edited copy survives an upgrade; `AGENTS.md` whenever it changed, and to
+`CLAUDE.md` as well. `bookmarks/main.js` is the worked example and the guide is
+the contract in prose — change `shared/runtime.ts` and change the guide.
+`JT_HOME` redirects this directory with the rest.
+
 **Two parts of the contract currently have no user**, both kept because they
 are the shell's, not any plugin's: `SecretField`'s `{ list, field }` form, for
 a plugin holding several credentials rather than one, and `mergeConfig`, for
@@ -80,10 +104,11 @@ could return arbitrary JSX would undo the design tokens in an afternoon. The two
 places a plugin *does* return React are `screen()` and `settings()`, which are
 full screens rather than list rows and answer to nothing else on the page.
 
-**Rows carry closures, not serialisable commands.** That's what keeps the
-builders as direct as they were when there was only a board to draw, and it is
-the thing that would have to change first for runtime-loaded third-party
-plugins: a closure can't cross the bridge.
+**Built-in rows carry closures; runtime rows carry names.** Closures are what
+keep the compiled-in builders as direct as they were when there was only a
+board to draw, and a closure can't cross the bridge — which is why a runtime
+plugin describes `run` as `{ command, args }` or `{ url }` and the runtime view
+turns that back into a closure on the renderer side.
 
 **Commands are addressed by plugin and name.** `window.jt.invoke('jira',
 'start', [key])` — untyped at the seam, because it has to carry any plugin's
@@ -437,7 +462,8 @@ reach for it.
 ## Testing
 
 `npm test` covers pure logic only: `time`, `timer-logic`, `activities`, `stages`,
-`conn`, `worklog`, `palette`, `board`, `sections`, `layout`, `keys`, `claude`. There
+`conn`, `worklog`, `palette`, `board`, `sections`, `layout`, `keys`, `claude`,
+`runtime`. There
 are no component or IPC tests — if you add a feature with real logic in it, put
 that logic in `src/shared/` and test it there rather than reaching for a
 rendering harness.

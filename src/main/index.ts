@@ -10,6 +10,8 @@ import { app, globalShortcut } from 'electron';
 import { DEFAULT_HOTKEY } from '@shared/shell';
 import * as shell from './shell';
 import { PLUGINS } from './plugins';
+import { installPluginsDir } from './plugins/install';
+import { mountRuntimePlugins } from './runtime';
 import { registerIpc } from './ipc';
 import { beginQuit, createPanel, getPanel, showPanel, togglePanel } from './panel';
 import { createTray, destroyTray } from './tray';
@@ -66,6 +68,11 @@ if (!app.requestSingleInstanceLock()) {
 
     installMenu();
     for (const plugin of PLUGINS) shell.register(plugin);
+    // The directory is seeded before it is read, so a first launch shows the
+    // example plugin; and both happen before the config is read, so a plugin's
+    // secrets are known to the store when it decrypts.
+    await installPluginsDir();
+    await mountRuntimePlugins();
     registerIpc();
     createPanel();
     createTray();

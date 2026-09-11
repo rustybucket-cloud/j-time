@@ -18,7 +18,7 @@ import type { PluginSnapshots, Snapshot } from '@shared/ipc';
 import { freezeOrder, type LayoutState } from '@shared/layout';
 import type { PluginMeta, ShellConfig } from '@shared/shell';
 import type { MainPlugin, MenuBarState } from './plugin';
-import { readConfig, writeConfig, type RootConfig, type SecretFields } from './store';
+import { PLUGINS_DIR, readConfig, writeConfig, type RootConfig, type SecretFields } from './store';
 
 /** Opening the palette re-reads only what's older than this. */
 const STALE_MS = 15_000;
@@ -50,6 +50,18 @@ export function register(plugin: MainPlugin): void {
     timer: null,
   });
   plugin.init({ changed: emit, refresh: () => void refreshPlugin(plugin.id) });
+}
+
+export function has(id: string): boolean {
+  return registry.has(id);
+}
+
+/** Forget a plugin. Its config section stays in the file, as an uninstalled one's would. */
+export function unregister(id: string): void {
+  const entry = registry.get(id);
+  if (!entry) return;
+  if (entry.timer) clearInterval(entry.timer);
+  registry.delete(id);
 }
 
 export function plugins(): MainPlugin[] {
@@ -84,6 +96,7 @@ export function snapshot(): Snapshot {
       layout: root.layout,
       plugins: [...registry.values()].map((r) => ({ ...r.meta })),
       hotkeyRegistered,
+      pluginsDir: PLUGINS_DIR,
     },
     plugins: slices as unknown as PluginSnapshots,
   };

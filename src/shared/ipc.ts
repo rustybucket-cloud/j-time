@@ -21,16 +21,20 @@ import type { ClaudeSnapshot } from './claude';
 /**
  * Every installed plugin's slice, by id.
  *
- * Listed rather than left as `Record<string, unknown>`: plugins are compiled in,
- * so there is no reason to give up knowing their shapes. Adding a plugin means
- * adding a line here, which is the intended amount of friction.
+ * The built-ins are listed rather than left as `Record<string, unknown>`: they
+ * are compiled in, so there is no reason to give up knowing their shapes, and
+ * adding one means adding a line here. The index signature is for the plugins
+ * loaded from `~/.j-time/plugins`, whose ids nobody knows at compile time and
+ * whose slices are all the one `RuntimeSnapshot` shape.
  */
 export interface PluginSnapshots {
   jira: JiraSnapshot;
   claude: ClaudeSnapshot;
+  [runtime: string]: unknown;
 }
 
-export type PluginId = keyof PluginSnapshots & string;
+export type BuiltinId = 'jira' | 'claude';
+export type PluginId = string;
 
 export interface Snapshot {
   shell: ShellSnapshot;
@@ -50,6 +54,8 @@ export interface Bridge {
   query(plugin: string, command: string, args?: unknown[]): Promise<QueryResult<unknown>>;
   /** Re-read one plugin, or all of them. */
   refresh(plugin?: string): Promise<ActionResult>;
+  /** Re-read the plugins directory: new directories, and edits to main.js. */
+  reloadPlugins(): Promise<ActionResult>;
   savePluginConfig(plugin: string, patch: Record<string, unknown>): Promise<ActionResult>;
 
   saveShellConfig(patch: Partial<ShellConfig>): Promise<ActionResult>;

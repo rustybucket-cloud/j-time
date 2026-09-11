@@ -5,7 +5,7 @@ import { moveSection, resolveLayout, toggleCollapsed, togglePins } from '@shared
 import { prettyAccelerator } from '@shared/keys';
 
 /**
- * The app's own settings: the hotkey, and the arrangement of the sections.
+ * The app's own settings: the hotkey, and the arrangement of the plugins.
  *
  * Everything else belongs to a plugin and is edited on that plugin's own form.
  * What is here is what would still exist if every plugin were uninstalled.
@@ -19,7 +19,7 @@ export function ShellSettings({
   onSaved: (message: string) => void;
   onConfigure: (plugin: string) => void;
 }): ReactNode {
-  const { config, layout, plugins, hotkeyRegistered } = snapshot.shell;
+  const { config, layout, plugins, hotkeyRegistered, pluginsDir } = snapshot.shell;
   const [hotkey, setHotkey] = useState(config.hotkey);
   const [saving, setSaving] = useState(false);
 
@@ -35,6 +35,13 @@ export function ShellSettings({
   }
 
   const apply = (next: ReturnType<typeof toggleCollapsed>) => void window.jt.saveLayout(next);
+
+  // The path, not the folder: opening Finder over an always-on-top panel is a
+  // context switch the user didn't ask for, and a path pastes into anything.
+  async function copyPluginsDir(): Promise<void> {
+    await window.jt.copy(pluginsDir);
+    onSaved('Copied the plugins folder path');
+  }
 
   return (
     <div
@@ -68,9 +75,9 @@ export function ShellSettings({
       </div>
 
       <div className="field">
-        <label>Sections</label>
+        <label>Plugins</label>
         <div className="note">
-          The order the palette lists them in. A pinned row is one a section may lift
+          The order the palette lists them in. A pinned row is one a plugin may lift
           above the others — the running timer, say.
         </div>
         <div className="sections-editor">
@@ -117,6 +124,18 @@ export function ShellSettings({
               </button>
             </div>
           ))}
+        </div>
+        <div className="plugins-dir">
+          <span className="path" title={pluginsDir}>
+            {pluginsDir}
+          </span>
+          <button type="button" onClick={() => void copyPluginsDir()}>
+            Copy path
+          </button>
+        </div>
+        <div className="note">
+          A folder with a main.js in it is a plugin. There’s an example and a guide there;
+          “Reload plugins” in the palette picks up changes.
         </div>
       </div>
 

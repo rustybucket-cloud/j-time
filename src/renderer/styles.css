@@ -600,7 +600,8 @@ kbd {
 
 .field input[type='text'],
 .field input[type='password'],
-.field input[type='number'] {
+.field input[type='number'],
+.field textarea {
   width: 100%;
   padding: 8px 10px;
   border-radius: 7px;
@@ -612,8 +613,21 @@ kbd {
   user-select: text;
 }
 
-.field input:focus {
+.field input:focus,
+.field textarea:focus {
   border-color: var(--accent);
+}
+
+.field textarea {
+  resize: vertical;
+  line-height: 1.4;
+}
+
+/* A label with a pill after it, the way a section header carries one. */
+.field label .pill {
+  margin-left: 6px;
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 .field .note {
@@ -658,7 +672,7 @@ kbd {
   border-left-color: var(--warn);
 }
 
-/* --- The section arrangement editor, in Settings --- */
+/* --- The plugin arrangement editor, in Settings --- */
 
 .sections-editor {
   display: flex;
@@ -685,7 +699,8 @@ kbd {
   min-width: 0;
 }
 
-.section-setting button {
+.section-setting button,
+.plugins-dir button {
   background: transparent;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -700,9 +715,34 @@ kbd {
   opacity: 0.35;
 }
 
-.section-setting button:not(:disabled):hover {
+.section-setting button:not(:disabled):hover,
+.plugins-dir button:hover {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+/* Where the plugins live, and the one button that hands the path over. */
+.plugins-dir {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.plugins-dir button {
+  flex: none;
+  white-space: nowrap;
+}
+
+.plugins-dir .path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--dim);
+  user-select: text;
 }
 
 /*
